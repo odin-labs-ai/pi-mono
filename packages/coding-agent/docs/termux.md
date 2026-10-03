@@ -17,7 +17,9 @@ pkg update && pkg upgrade
 pkg install nodejs termux-api git
 
 # Install pi
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+npm config set @odinlabs-ai:registry https://npm.pkg.github.com
+npm login --scope=@odinlabs-ai --auth-type=legacy --registry=https://npm.pkg.github.com
+npm install -g --ignore-scripts @odinlabs-ai/pi-coding-agent
 
 # Create config directory
 mkdir -p ~/.pi/agent
@@ -25,6 +27,8 @@ mkdir -p ~/.pi/agent
 # Run pi
 pi
 ```
+
+At the login prompts, use your GitHub username and a token with `read:packages` as the password.
 
 ## Clipboard Support
 

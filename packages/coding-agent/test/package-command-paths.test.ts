@@ -402,7 +402,7 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 			value: join(selfPackageDir, "dist", "cli.js"),
 			configurable: true,
 		});
-		const fetchMock = vi.fn(async () => Response.json({ version: VERSION }));
+		const fetchMock = vi.fn(async () => Response.json({ tag_name: `v${VERSION}` }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -427,7 +427,7 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 		}
 	});
 
-	it("uses the current package name when the update check omits packageName", async () => {
+	it("uses the Odin package name from the GitHub release during legacy installation migration", async () => {
 		const globalPrefix = join(tempDir, "global-prefix");
 		const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
 		const fakeNpmPath = join(tempDir, "fake-npm.cjs");
@@ -450,7 +450,7 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 			configurable: true,
 		});
 		const targetVersion = getNewerPatchVersion();
-		const fetchMock = vi.fn(async () => Response.json({ version: targetVersion }));
+		const fetchMock = vi.fn(async () => Response.json({ tag_name: `v${targetVersion}` }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -473,7 +473,7 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 		}
 	});
 
-	it("installs the active package name from the update check during self-update", async () => {
+	it("installs the Odin package version from the GitHub release during self-update", async () => {
 		const globalPrefix = join(tempDir, "global-prefix");
 		const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
 		const fakeNpmPath = join(tempDir, "fake-npm.cjs");
@@ -499,10 +499,10 @@ else {
 			value: join(selfPackageDir, "dist", "cli.js"),
 			configurable: true,
 		});
-		const activePackageName = PACKAGE_NAME === "@new-scope/pi" ? "@newer-scope/pi" : "@new-scope/pi";
+		const targetVersion = getNewerPatchVersion();
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => Response.json({ packageName: activePackageName, version: "0.73.0" })),
+			vi.fn(async () => Response.json({ tag_name: `v${targetVersion}` })),
 		);
 
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -514,17 +514,14 @@ else {
 			expect(process.exitCode).toBeUndefined();
 			expect(errorSpy).not.toHaveBeenCalled();
 			const recordedCalls = JSON.parse(readFileSync(recordPath, "utf-8")) as string[][];
-			expect(recordedCalls).toEqual([
-				expect.arrayContaining(["uninstall", "-g", PACKAGE_NAME]),
-				expect.arrayContaining(["install", "-g", `${activePackageName}@0.73.0`]),
-			]);
+			expect(recordedCalls).toEqual([expect.arrayContaining(["install", "-g", `${PACKAGE_NAME}@${targetVersion}`])]);
 		} finally {
 			logSpy.mockRestore();
 			errorSpy.mockRestore();
 		}
 	});
 
-	it("fails self-update when renamed npm package installation fails", async () => {
+	it("fails self-update when the Odin package installation fails", async () => {
 		const globalPrefix = join(tempDir, "global-prefix");
 		const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
 		const fakeNpmPath = join(tempDir, "fake-npm-fail.cjs");
@@ -552,10 +549,10 @@ if(args.includes("install")) process.exit(23);
 			value: join(selfPackageDir, "dist", "cli.js"),
 			configurable: true,
 		});
-		const activePackageName = PACKAGE_NAME === "@new-scope/pi" ? "@newer-scope/pi" : "@new-scope/pi";
+		const targetVersion = getNewerPatchVersion();
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => Response.json({ packageName: activePackageName, version: "0.73.0" })),
+			vi.fn(async () => Response.json({ tag_name: `v${targetVersion}` })),
 		);
 
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -570,10 +567,7 @@ if(args.includes("install")) process.exit(23);
 			expect(stdout).not.toContain(`Updated pi`);
 			expect(stderr).toContain("exited with code 23");
 			const recordedCalls = JSON.parse(readFileSync(recordPath, "utf-8")) as string[][];
-			expect(recordedCalls).toEqual([
-				expect.arrayContaining(["uninstall", "-g", PACKAGE_NAME]),
-				expect.arrayContaining(["install", "-g", `${activePackageName}@0.73.0`]),
-			]);
+			expect(recordedCalls).toEqual([expect.arrayContaining(["install", "-g", `${PACKAGE_NAME}@${targetVersion}`])]);
 		} finally {
 			logSpy.mockRestore();
 			errorSpy.mockRestore();

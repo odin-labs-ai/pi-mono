@@ -5,7 +5,7 @@ import {
 	type Model,
 	type TextContent,
 	type Usage,
-} from "@earendil-works/pi-ai/base";
+} from "@odinlabs-ai/pi-ai/base";
 import type { AgentMessage, ThinkingLevel } from "../../types.ts";
 import {
 	convertToLlm,

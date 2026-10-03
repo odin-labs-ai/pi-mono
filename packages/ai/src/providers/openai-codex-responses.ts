@@ -43,9 +43,10 @@ import {
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
+import { readWithStreamIdleTimeout, resolveStreamIdleTimeoutMs } from "../utils/stream-idle.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, resolveMaxTokens } from "./simple-options.ts";
 
 // ============================================================================
 // Configuration
@@ -99,6 +100,7 @@ interface RequestBody {
 	reasoning?: { effort?: string; summary?: string };
 	service_tier?: ResponseCreateParamsStreaming["service_tier"];
 	text?: { verbosity?: string };
+	max_output_tokens?: number;
 	include?: string[];
 	prompt_cache_key?: string;
 	[key: string]: unknown;
@@ -244,7 +246,8 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				websocketRequestId,
 			);
 			const bodyJson = JSON.stringify(body);
-			const idleTimeoutMs = normalizeTimeoutMs(options?.timeoutMs);
+			const idleTimeoutMs =
+				normalizeTimeoutMs(options?.timeoutMs) ?? resolveStreamIdleTimeoutMs(undefined, options?.env);
 			const websocketConnectTimeoutMs = normalizeTimeoutMs(options?.websocketConnectTimeoutMs);
 			const transport = options?.transport || "auto";
 			const websocketDisabledForSession = transport !== "sse" && isWebSocketSseFallbackActive(options?.sessionId);
@@ -386,7 +389,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			}
 
 			stream.push({ type: "start", partial: output });
-			await processStream(response, output, stream, model, options);
+			await processStream(response, output, stream, model, idleTimeoutMs, options);
 
 			if (options?.signal?.aborted) {
 				throw new Error("Request was aborted");
@@ -461,6 +464,7 @@ function buildRequestBody(
 		prompt_cache_key: clampOpenAIPromptCacheKey(options?.sessionId),
 		tool_choice: "auto",
 		parallel_tool_calls: true,
+		max_output_tokens: resolveMaxTokens(model, options?.maxTokens),
 	};
 
 	if (options?.temperature !== undefined) {
@@ -554,13 +558,20 @@ async function processStream(
 	output: AssistantMessage,
 	stream: AssistantMessageEventStream,
 	model: Model<"openai-codex-responses">,
+	idleTimeoutMs: number,
 	options?: OpenAICodexResponsesOptions,
 ): Promise<void> {
-	await processResponsesStream(mapCodexEvents(parseSSE(response, options?.signal)), output, stream, model, {
-		serviceTier: options?.serviceTier,
-		resolveServiceTier: resolveCodexServiceTier,
-		applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
-	});
+	await processResponsesStream(
+		mapCodexEvents(parseSSE(response, options?.signal, idleTimeoutMs)),
+		output,
+		stream,
+		model,
+		{
+			serviceTier: options?.serviceTier,
+			resolveServiceTier: resolveCodexServiceTier,
+			applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
+		},
+	);
 }
 
 class CodexApiError extends Error {
@@ -634,7 +645,11 @@ function normalizeCodexStatus(status: unknown): CodexResponseStatus | undefined 
 // SSE Parsing
 // ============================================================================
 
-async function* parseSSE(response: Response, signal?: AbortSignal): AsyncGenerator<Record<string, unknown>> {
+async function* parseSSE(
+	response: Response,
+	signal?: AbortSignal,
+	idleTimeoutMs = 0,
+): AsyncGenerator<Record<string, unknown>> {
 	if (!response.body) return;
 
 	const reader = response.body.getReader();
@@ -650,7 +665,7 @@ async function* parseSSE(response: Response, signal?: AbortSignal): AsyncGenerat
 			if (signal?.aborted) {
 				throw new Error("Request was aborted");
 			}
-			const { done, value } = await reader.read();
+			const { done, value } = await readWithStreamIdleTimeout(reader, idleTimeoutMs);
 			if (signal?.aborted) {
 				throw new Error("Request was aborted");
 			}

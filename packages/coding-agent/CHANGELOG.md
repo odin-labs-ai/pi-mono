@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.79.10-odin.1] - 2026-10-03
+
+### Breaking Changes
+
+- Changed the package scope from `@earendil-works/pi-coding-agent` to `@odinlabs-ai/pi-coding-agent` for the Odin-maintained release line.
+- Raised the supported Node.js floor to 22.19.0.
+- Replaced the inherited `enableInstallTelemetry` setting and `PI_TELEMETRY` variable with `enableProviderAttribution` and `PI_PROVIDER_ATTRIBUTION`; existing opt-outs remain honored as privacy-preserving migration fallbacks, while the new names take precedence.
+
+### Fixed
+
+- Fixed fuzzy edits to replace only the matched source span, preserving untouched same-line bytes across Unicode normalization and long lines.
+- Refreshed the published shrinkwrap to resolve patched runtime dependency versions.
+- Pinned the Odin Pi package quartet exactly and routed publication, update checks, release links, attribution, and package resolution through Odin-owned GitHub surfaces.
+- Removed the inherited install telemetry call to `pi.dev` and made direct GitHub Gist links the default for explicitly shared sessions.
+
+### Removed
+
+- Removed the unsupported Gondolin example: its upstream dependency requires Node.js 23.6 despite the Odin Node 22 contract and currently has an unpatched high-severity `node-forge` advisory.
+
 ## [0.79.10] - 2026-06-22
 
 ### New Features

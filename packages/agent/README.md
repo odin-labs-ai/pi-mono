@@ -1,18 +1,18 @@
-# @earendil-works/pi-agent-core
+# @odinlabs-ai/pi-agent-core
 
-Stateful agent with tool execution and event streaming. Built on `@earendil-works/pi-ai`.
+Stateful agent with tool execution and event streaming. Built on `@odinlabs-ai/pi-ai`.
 
 ## Installation
 
 ```bash
-npm install @earendil-works/pi-agent-core
+npm install @odinlabs-ai/pi-agent-core
 ```
 
 ## Quick Start
 
 ```typescript
-import { Agent } from "@earendil-works/pi-agent-core";
-import { getModel } from "@earendil-works/pi-ai";
+import { Agent } from "@odinlabs-ai/pi-agent-core";
+import { getModel } from "@odinlabs-ai/pi-ai";
 
 const agent = new Agent({
   initialState: {
@@ -33,12 +33,12 @@ await agent.prompt("Hello!");
 
 ## Base Entry Point
 
-Use `@earendil-works/pi-agent-core/base` with `@earendil-works/pi-ai/base` when bundling applications that should include only selected provider transports:
+Use `@odinlabs-ai/pi-agent-core/base` with `@odinlabs-ai/pi-ai/base` when bundling applications that should include only selected provider transports:
 
 ```typescript
-import { Agent } from "@earendil-works/pi-agent-core/base";
-import { getModel } from "@earendil-works/pi-ai/base";
-import { register } from "@earendil-works/pi-ai/anthropic";
+import { Agent } from "@odinlabs-ai/pi-agent-core/base";
+import { getModel } from "@odinlabs-ai/pi-ai/base";
+import { register } from "@odinlabs-ai/pi-ai/anthropic";
 
 register();
 
@@ -47,7 +47,7 @@ const agent = new Agent({
 });
 ```
 
-The default `@earendil-works/pi-agent-core` entry point remains batteries-included and registers pi-ai's lazy built-in transports for backward compatibility.
+The default `@odinlabs-ai/pi-agent-core` entry point remains batteries-included and registers pi-ai's lazy built-in transports for backward compatibility.
 
 ## Core Concepts
 
@@ -373,7 +373,7 @@ Follow-up messages are checked only when there are no more tool calls and no ste
 Extend `AgentMessage` via declaration merging:
 
 ```typescript
-declare module "@earendil-works/pi-agent-core" {
+declare module "@odinlabs-ai/pi-agent-core" {
   interface CustomAgentMessages {
     notification: { role: "notification"; text: string; timestamp: number };
   }
@@ -454,7 +454,7 @@ Return `terminate: true` from `execute()` or `afterToolCall` to hint that the ag
 For browser apps that proxy through a backend:
 
 ```typescript
-import { Agent, streamProxy } from "@earendil-works/pi-agent-core";
+import { Agent, streamProxy } from "@odinlabs-ai/pi-agent-core";
 
 const agent = new Agent({
   streamFn: (model, context, options) =>
@@ -471,7 +471,7 @@ const agent = new Agent({
 For direct control without the Agent class:
 
 ```typescript
-import { agentLoop, agentLoopContinue } from "@earendil-works/pi-agent-core";
+import { agentLoop, agentLoopContinue } from "@odinlabs-ai/pi-agent-core";
 
 const context: AgentContext = {
   systemPrompt: "You are helpful.",

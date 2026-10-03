@@ -7,24 +7,20 @@ Pi is a minimal terminal coding harness. It is designed to stay small at the cor
 Install Pi with npm:
 
 ```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+npm config set @odinlabs-ai:registry https://npm.pkg.github.com
+npm login --scope=@odinlabs-ai --auth-type=legacy --registry=https://npm.pkg.github.com
+npm install -g --ignore-scripts @odinlabs-ai/pi-coding-agent
 ```
 
-`--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
-
-On Linux or macOS, you can also use the installer:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
-```
+At the login prompts, use your GitHub username and a token with `read:packages` as the password. `--ignore-scripts` disables dependency lifecycle scripts during install; Pi does not require install scripts for normal npm installs.
 
 To uninstall pi itself, use npm for curl and npm installs:
 
 ```bash
-npm uninstall -g @earendil-works/pi-coding-agent
+npm uninstall -g @odinlabs-ai/pi-coding-agent
 ```
 
-For pnpm, Yarn, or Bun installs, use the matching global remove command: `pnpm remove -g @earendil-works/pi-coding-agent`, `yarn global remove @earendil-works/pi-coding-agent`, or `bun uninstall -g @earendil-works/pi-coding-agent`.
+For pnpm, Yarn, or Bun installs, use the matching global remove command: `pnpm remove -g @odinlabs-ai/pi-coding-agent`, `yarn global remove @odinlabs-ai/pi-coding-agent`, or `bun uninstall -g @odinlabs-ai/pi-coding-agent`.
 
 Then run it in a project directory:
 
@@ -42,7 +38,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 - [Using Pi](usage.md) - interactive mode, slash commands, context files, and CLI reference.
 - [Providers](providers.md) - subscription and API-key setup for built-in providers.
 - [Security](security.md) - project trust, sandbox boundaries, and vulnerability reporting.
-- [Containerization](containerization.md) - sandbox pi with Gondolin, Docker, or OpenShell.
+- [Containerization](containerization.md) - sandbox pi with Docker or OpenShell.
 - [Settings](settings.md) - global and project settings.
 - [Keybindings](keybindings.md) - default shortcuts and custom keybindings.
 - [Sessions](sessions.md) - session management, branching, and tree navigation.

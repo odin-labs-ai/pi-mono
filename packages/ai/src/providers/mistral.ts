@@ -24,9 +24,10 @@ import type {
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
+import { parseFinalToolArguments, parseStreamingJson } from "../utils/json-parse.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { resolveStreamIdleTimeoutMs, withStreamIdleTimeout } from "../utils/stream-idle.ts";
+import { buildBaseOptions, resolveMaxTokens } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 const MISTRAL_TOOL_CALL_ID_LENGTH = 9;
@@ -78,7 +79,13 @@ export const streamMistral: StreamFunction<"mistral-conversations", MistralOptio
 			}
 			const mistralStream = await mistral.chat.stream(payload, buildRequestOptions(model, options));
 			stream.push({ type: "start", partial: output });
-			await consumeChatStream(model, output, stream, mistralStream);
+			await consumeChatStream(
+				model,
+				output,
+				stream,
+				mistralStream,
+				resolveStreamIdleTimeoutMs(options?.timeoutMs, options?.env),
+			);
 
 			if (options?.signal?.aborted) {
 				throw new Error("Request was aborted");
@@ -260,7 +267,7 @@ function buildChatPayload(
 
 	if (context.tools?.length) payload.tools = toFunctionTools(context.tools);
 	if (options?.temperature !== undefined) payload.temperature = options.temperature;
-	if (options?.maxTokens !== undefined) payload.maxTokens = options.maxTokens;
+	payload.maxTokens = resolveMaxTokens(model, options?.maxTokens);
 	if (options?.toolChoice) payload.toolChoice = mapToolChoice(options.toolChoice);
 	if (options?.promptMode) payload.promptMode = options.promptMode;
 	if (options?.reasoningEffort) payload.reasoningEffort = options.reasoningEffort;
@@ -306,6 +313,7 @@ async function consumeChatStream(
 	output: AssistantMessage,
 	stream: AssistantMessageEventStream,
 	mistralStream: AsyncIterable<CompletionEvent>,
+	idleTimeoutMs: number,
 ): Promise<void> {
 	let currentBlock: TextContent | ThinkingContent | null = null;
 	const blocks = output.content;
@@ -333,7 +341,7 @@ async function consumeChatStream(
 		}
 	};
 
-	for await (const event of mistralStream) {
+	for await (const event of withStreamIdleTimeout(mistralStream, idleTimeoutMs)) {
 		const chunk = event.data;
 		// Mistral's streamed CompletionChunk carries an id field. Keep the first non-empty one,
 		// mirroring how OpenAI-style streaming exposes a stable response identifier per stream.
@@ -478,7 +486,7 @@ async function consumeChatStream(
 		const block = output.content[index];
 		if (block.type !== "toolCall") continue;
 		const toolBlock = block as ToolCall & { partialArgs?: string };
-		toolBlock.arguments = parseStreamingJson<Record<string, unknown>>(toolBlock.partialArgs);
+		toolBlock.arguments = parseFinalToolArguments<Record<string, unknown>>(toolBlock.partialArgs);
 		// Finalize in-place and strip the scratch buffer so replay only
 		// carries parsed arguments.
 		delete toolBlock.partialArgs;

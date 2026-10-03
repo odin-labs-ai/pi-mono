@@ -1,6 +1,6 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@odinlabs-ai/pi-ai";
+import { isProviderAttributionEnabled } from "./provider-attribution-setting.ts";
 import type { SettingsManager } from "./settings-manager.ts";
-import { isInstallTelemetryEnabled } from "./telemetry.ts";
 
 const OPENROUTER_HOST = "openrouter.ai";
 const NVIDIA_NIM_HOST = "integrate.api.nvidia.com";
@@ -42,14 +42,14 @@ function getDefaultAttributionHeaders(
 	model: Model<Api>,
 	settingsManager: SettingsManager,
 ): Record<string, string> | undefined {
-	if (!isInstallTelemetryEnabled(settingsManager)) {
+	if (!isProviderAttributionEnabled(settingsManager)) {
 		return undefined;
 	}
 
 	if (isOpenRouterModel(model)) {
 		return {
-			"HTTP-Referer": "https://pi.dev",
-			"X-OpenRouter-Title": "pi",
+			"HTTP-Referer": "https://github.com/odin-labs-ai/pi-mono",
+			"X-OpenRouter-Title": "Odin Pi",
 			"X-OpenRouter-Categories": "cli-agent",
 		};
 	}
@@ -68,8 +68,8 @@ function getDefaultAttributionHeaders(
 
 	if (isVercelGatewayModel(model)) {
 		return {
-			"http-referer": "https://pi.dev",
-			"x-title": "pi",
+			"http-referer": "https://github.com/odin-labs-ai/pi-mono",
+			"x-title": "Odin Pi",
 		};
 	}
 

@@ -114,8 +114,8 @@ Rules:
 
 Attribution:
 
-- Internal (from issues): `Fixed foo bar ([#123](https://github.com/earendil-works/pi-mono/issues/123))`
-- External contributions: `Added feature X ([#456](https://github.com/earendil-works/pi-mono/pull/456) by [@username](https://github.com/username))`
+- Internal (from issues): `Fixed foo bar ([#123](https://github.com/odin-labs-ai/pi-mono/issues/123))`
+- External contributions: `Added feature X ([#456](https://github.com/odin-labs-ai/pi-mono/pull/456) by [@username](https://github.com/username))`
 
 ## Releasing
 
@@ -144,18 +144,20 @@ Attribution:
    ```
    Verify both Node and Bun startup, model/account listing, interactive startup, and at least one real prompt with the intended default provider. The bare commands `/tmp/pi-local-release/node/pi` and `/tmp/pi-local-release/bun/pi` start interactive mode; run each in tmux, submit a prompt, and wait for the model reply before considering the interactive smoke test passed. Failures are release blockers unless the user explicitly accepts the risk.
 
-3. **Run the release script**:
+3. **Run the release script**. Odin patch releases increment the `-odin.N` revision; minor releases start the next minor line at `-odin.1`. Releases fail closed unless the checkout is clean `main` at exactly `origin/main`; the branch and tag are pushed atomically. For a version already prepared and reviewed in a PR, validate it first, then use `release:current` to tag it without changing package versions:
    ```bash
+   npm run release:check                                                  # no tag or push
+   PI_ALLOW_LOCKFILE_CHANGE=1 npm run release:current                       # first prepared Odin release
    PI_ALLOW_LOCKFILE_CHANGE=1 npm_config_min_release_age=0 npm run release:patch    # fixes + additions
    PI_ALLOW_LOCKFILE_CHANGE=1 npm_config_min_release_age=0 npm run release:minor    # breaking changes
    ```
    Use `npm_config_min_release_age=0` only for the release command. The repo's normal npm age gate can otherwise block the release lockfile refresh when the current workspace package version was published recently. Review any lockfile or shrinkwrap diffs the release creates before push.
 
-   The release script bumps all package versions, updates changelogs, regenerates release artifacts, runs `npm run check`, commits `Release vX.Y.Z`, tags `vX.Y.Z`, adds fresh `## [Unreleased]` changelog sections, commits `Add [Unreleased] section for next cycle`, then pushes `main` and the tag. Do not rerun the release script after a tag was pushed.
+   The patch/minor release scripts bump all package versions, update changelogs, regenerate release artifacts, run `npm run check`, commit `Release vX.Y.Z-odin.N`, tag it, add fresh `## [Unreleased]` changelog sections, commit the next-cycle update, then push `main` and the tag. `release:current` makes no source commit: it accepts only a clean, already-versioned tree with matching release and next-cycle changelog sections. Do not rerun any release script after its tag was pushed.
 
-4. **CI publishes npm packages**: pushing the `vX.Y.Z` tag triggers `.github/workflows/build-binaries.yml`. The `publish-npm` job uses npm trusted publishing through GitHub Actions OIDC with environment `npm-publish`; no local `npm publish`, `npm whoami`, OTP, or WebAuthn flow is required.
+4. **CI publishes GitHub Packages**: pushing the `vX.Y.Z` tag triggers `.github/workflows/build-binaries.yml`. The `publish-packages` job authenticates `@odinlabs-ai` to `https://npm.pkg.github.com` with the repository-scoped `GITHUB_TOKEN` and `packages: write`. Do not publish these packages to npmjs.
 
-5. **If CI publish fails**: inspect the failed `publish-npm` job. The publish helper is idempotent and skips package versions already present on npm, so rerun the tag workflow after fixing CI or transient npm issues. Do not rerun `npm run release:patch` or `npm run release:minor` for the same version.
+5. **If CI publish fails**: inspect the failed `publish-packages` job. The publish helper is idempotent and skips package versions already present on GitHub Packages, so rerun the tag workflow after fixing CI or transient registry issues. Do not rerun `npm run release:patch` or `npm run release:minor` for the same version.
 
 ## User Override
 

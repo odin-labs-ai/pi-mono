@@ -1,6 +1,6 @@
 {
-	"name": "@earendil-works/pi-ai",
-	"version": "0.79.10",
+	"name": "@odinlabs-ai/pi-ai",
+	"version": "0.79.10-odin.1",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -71,10 +71,11 @@
 		"README.md"
 	],
 	"scripts": {
-		"clean": "shx rm -rf dist",
+		"clean": "node ../../scripts/package-files.mjs clean packages/ai",
 		"generate-models": "node scripts/generate-models.ts",
 		"generate-image-models": "node scripts/generate-image-models.ts",
-		"build": "npm run generate-models && npm run generate-image-models && tsgo -p tsconfig.build.json",
+		"refresh-models": "npm run generate-models && npm run generate-image-models",
+		"build": "tsgo -p tsconfig.build.json",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
@@ -105,8 +106,11 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi.git",
+		"url": "git+https://github.com/odin-labs-ai/pi-mono.git",
 		"directory": "packages/ai"
+	},
+	"publishConfig": {
+		"registry": "https://npm.pkg.github.com"
 	},
 	"engines": {
 		"node": ">=22.19.0"
@@ -114,6 +118,6 @@
 	"devDependencies": {
 		"@types/node": "24.12.4",
 		"canvas": "3.2.3",
-		"vitest": "4.1.9"
+		"vitest": "4.1.11"
 	}
 }

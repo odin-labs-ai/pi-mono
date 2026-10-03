@@ -1082,6 +1082,58 @@ describe("edit tool fuzzy matching", () => {
 		expect(readFileSync(testFile, "utf-8")).toBe(expectedContent);
 		expect(applyPatch(originalContent, result.details?.patch ?? "")).toBe(expectedContent);
 	});
+
+	it("should preserve same-line bytes outside a fuzzy replacement", async () => {
+		const testFile = join(testDir, "fuzzy-preserve-same-line.txt");
+		const originalContent = "keep “quoted” and 5²; target — old; keep ﬁle\n";
+		writeFileSync(testFile, originalContent);
+
+		await editTool.execute("test-fuzzy-preserve-same-line", {
+			path: testFile,
+			edits: [{ oldText: "target - old", newText: "target - new" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("keep “quoted” and 5²; target - new; keep ﬁle\n");
+	});
+
+	it("should keep a decomposed combining mark before a fuzzy span byte-identical", async () => {
+		const testFile = join(testDir, "fuzzy-preserve-combining-mark.txt");
+		writeFileSync(testFile, "résumé, ok — fine");
+
+		await editTool.execute("test-fuzzy-preserve-combining-mark", {
+			path: testFile,
+			edits: [{ oldText: ", ok - fine", newText: ", ok - FINE" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("résumé, ok - FINE");
+	});
+
+	it("should leave a spacing mark outside a fuzzy span boundary", async () => {
+		const testFile = join(testDir, "fuzzy-preserve-spacing-mark.txt");
+		writeFileSync(testFile, "x — naam का rest");
+
+		await editTool.execute("test-fuzzy-preserve-spacing-mark", {
+			path: testFile,
+			edits: [{ oldText: "x - naam क", newText: "X - NAAM क" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("X - NAAM का rest");
+	});
+
+	it("should map a long non-identity line in bounded time", async () => {
+		const testFile = join(testDir, "fuzzy-long-unicode-line.txt");
+		const prefix = "café ".repeat(12_000);
+		writeFileSync(testFile, `${prefix}— mark end`);
+		const startedAt = Date.now();
+
+		await editTool.execute("test-fuzzy-long-unicode-line", {
+			path: testFile,
+			edits: [{ oldText: "- mark", newText: "- MARK" }],
+		});
+
+		expect(Date.now() - startedAt).toBeLessThan(2_000);
+		expect(readFileSync(testFile, "utf-8")).toBe(`${prefix}- MARK end`);
+	});
 });
 
 describe("edit tool CRLF handling", () => {

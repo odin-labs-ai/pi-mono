@@ -1,11 +1,6 @@
 <p align="center">
-  <a href="https://pi.dev">
-    <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
-  </a>
-</p>
-<p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
+  <a href="https://github.com/odin-labs-ai/pi-mono/releases"><img alt="release" src="https://img.shields.io/github/v/release/odin-labs-ai/pi-mono?style=flat-square" /></a>
 </p>
 
 > New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -14,23 +9,20 @@
 
 This is the home of the Pi agent harness project including our self extensible coding agent.
 
-* **[@earendil-works/pi-coding-agent](packages/coding-agent)**: Interactive coding agent CLI
-* **[@earendil-works/pi-agent-core](packages/agent)**: Agent runtime with tool calling and state management
-* **[@earendil-works/pi-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
+* **[@odinlabs-ai/pi-coding-agent](packages/coding-agent)**: Interactive coding agent CLI
+* **[@odinlabs-ai/pi-agent-core](packages/agent)**: Agent runtime with tool calling and state management
+* **[@odinlabs-ai/pi-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
 
-To learn more about Pi:
-
-* [Visit pi.dev](https://pi.dev), the project website with demos
-* [Read the documentation](https://pi.dev/docs/latest), but you can also ask the agent to explain itself
+Read the [coding-agent documentation](packages/coding-agent/docs/index.md), or ask the agent to explain its own features. This Odin-maintained release line is derived from the [upstream Pi project](https://github.com/earendil-works/pi-mono).
 
 ## All Packages
 
 | Package | Description |
 |---------|-------------|
-| **[@earendil-works/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
-| **[@earendil-works/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@earendil-works/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
-| **[@earendil-works/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
+| **[@odinlabs-ai/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
+| **[@odinlabs-ai/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
+| **[@odinlabs-ai/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
+| **[@odinlabs-ai/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
 
 For Slack/chat automation and workflows see [earendil-works/pi-chat](https://github.com/earendil-works/pi-chat).
 
@@ -40,7 +32,6 @@ Pi does not include a built-in permission system for restricting filesystem, pro
 
 If you need stronger boundaries, containerize or sandbox Pi. See [packages/coding-agent/docs/containerization.md](packages/coding-agent/docs/containerization.md) for three patterns:
 
-- **Gondolin extension**: keep `pi` and provider auth on the host while routing built-in tools and `!` commands into a local Linux micro-VM.
 - **Plain Docker**: run the whole `pi` process in a local container for simple isolation.
 - **OpenShell**: run the whole `pi` process in a policy-controlled sandbox.
 
@@ -62,7 +53,7 @@ npm run check        # Lint, format, and type check
 
 We treat npm dependency changes as reviewed code changes.
 
-- Direct external dependencies are pinned to exact versions. Internal workspace packages remain version-ranged.
+- Direct external dependencies and published Odin workspace dependencies are pinned to exact versions.
 - `.npmrc` sets `save-exact=true` and `min-release-age=2` to avoid same-day dependency releases during npm resolution.
 - `package-lock.json` is the dependency ground truth. Pre-commit blocks accidental lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1` is set.
 - `npm run check` verifies pinned direct deps, native TypeScript import compatibility, and the generated coding-agent shrinkwrap.
@@ -91,9 +82,3 @@ I regularly publish my own `pi-mono` work sessions here:
 ## License
 
 MIT
-
-<p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="packages/coding-agent/docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-</p>

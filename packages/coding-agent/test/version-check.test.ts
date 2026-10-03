@@ -35,49 +35,60 @@ describe("version checks", () => {
 	});
 
 	it("returns only newer versions", async () => {
-		const fetchMock = vi.fn(async () => Response.json({ version: "1.2.3" }));
+		const fetchMock = vi.fn(async () => Response.json({ tag_name: "v1.2.3" }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(checkForNewPiVersion("1.2.3")).resolves.toBeUndefined();
-		await expect(checkForNewPiVersion("1.2.2")).resolves.toEqual({ version: "1.2.3" });
+		await expect(checkForNewPiVersion("1.2.2")).resolves.toEqual({
+			packageName: "@odinlabs-ai/pi-coding-agent",
+			version: "1.2.3",
+		});
 	});
 
-	it("uses the pi.dev version check api with a pi user agent", async () => {
-		const fetchMock = vi.fn(async () => Response.json({ version: "1.2.4" }));
+	it("uses the Odin GitHub release API with a pi user agent", async () => {
+		const fetchMock = vi.fn(async () => Response.json({ tag_name: "v1.2.4" }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(getLatestPiVersion("1.2.3")).resolves.toBe("1.2.4");
 		expect(fetchMock).toHaveBeenCalledWith(
-			"https://pi.dev/api/latest-version",
+			"https://api.github.com/repos/odin-labs-ai/pi-mono/releases/latest",
 			expect.objectContaining({
 				headers: expect.objectContaining({
 					"User-Agent": expect.stringMatching(/^pi\/1\.2\.3 /),
-					accept: "application/json",
+					accept: "application/vnd.github+json",
+					"X-GitHub-Api-Version": "2022-11-28",
 				}),
 			}),
 		);
 	});
 
-	it("returns the active package metadata from the version check api", async () => {
-		const fetchMock = vi.fn(async () =>
-			Response.json({
-				packageName: "@new-scope/pi",
-				version: "1.2.4",
-			}),
-		);
+	it("returns the Odin package metadata for the latest release", async () => {
+		const fetchMock = vi.fn(async () => Response.json({ tag_name: "v1.2.4" }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({
-			packageName: "@new-scope/pi",
+			packageName: "@odinlabs-ai/pi-coding-agent",
 			version: "1.2.4",
 		});
 	});
 
-	it("returns update notes from the version check api", async () => {
-		const fetchMock = vi.fn(async () => Response.json({ note: " **Read this** ", version: "1.2.4" }));
+	it("returns update notes from the GitHub release body", async () => {
+		const fetchMock = vi.fn(async () => Response.json({ body: " **Read this** ", tag_name: "v1.2.4" }));
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({ note: "**Read this**", version: "1.2.4" });
+		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({
+			note: "**Read this**",
+			packageName: "@odinlabs-ai/pi-coding-agent",
+			version: "1.2.4",
+		});
+	});
+
+	it("rejects non-semver release tags", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => Response.json({ tag_name: "nightly" })),
+		);
+		await expect(getLatestPiRelease("1.2.3")).resolves.toBeUndefined();
 	});
 
 	it("skips api calls when version checks are disabled", async () => {

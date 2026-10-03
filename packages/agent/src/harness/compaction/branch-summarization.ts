@@ -1,4 +1,4 @@
-import { completeSimple, type Model } from "@earendil-works/pi-ai/base";
+import { completeSimple, type Model } from "@odinlabs-ai/pi-ai/base";
 import type { AgentMessage } from "../../types.ts";
 import {
 	convertToLlm,

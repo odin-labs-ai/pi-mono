@@ -10,26 +10,71 @@ on:
         description: 'Tag to build (e.g., v0.12.0)'
         required: true
         type: string
-      source_ref:
-        description: 'Source ref to build/publish (defaults to tag; use only for release recovery)'
-        required: false
-        type: string
 
 permissions: {}
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@odinlabs-ai'
+          cache: npm
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev fd-find ripgrep
+          sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify tag, package versions, and main ancestry
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          node scripts/verify-release-ref.mjs "${RELEASE_TAG}"
+
+      - name: Build
+        run: npm run build
+
+      - name: Check
+        run: npm run check
+
+      - name: Test
+        run: npm test
+
+      - name: Verify release artifacts are committed
+        run: git diff --exit-code
+
   build:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      SOURCE_REF: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref_name }}
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ env.SOURCE_REF }}
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Bun
@@ -43,8 +88,16 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify tag, package versions, and main ancestry
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          node scripts/verify-release-ref.mjs "${RELEASE_TAG}"
+
       - name: Build binaries
-        run: ./scripts/build-binaries.sh
+        run: ./scripts/build-binaries.sh --skip-install
 
       - name: Extract changelog for this version
         id: changelog
@@ -82,38 +135,44 @@ jobs:
               "${release_assets[@]}"
           fi
 
-  publish-npm:
+  publish-packages:
     runs-on: ubuntu-latest
-    needs: build
+    needs: [validate, build]
     environment: npm-publish
     permissions:
       contents: read
-      id-token: write
+      packages: write
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      SOURCE_REF: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref_name }}
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ env.SOURCE_REF }}
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@odinlabs-ai'
           cache: npm
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev fd-find ripgrep
-          sudo ln -s $(which fdfind) /usr/local/bin/fd
+          sudo ln -s "$(command -v fdfind)" /usr/local/bin/fd
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      - name: Verify tag, package versions, and main ancestry
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          node scripts/verify-release-ref.mjs "${RELEASE_TAG}"
 
       - name: Build
         run: npm run build
@@ -121,16 +180,10 @@ jobs:
       - name: Check
         run: npm run check
 
-      - name: Test
-        run: npm test
-
       - name: Verify release artifacts are committed
         run: git diff --exit-code
 
-      - name: Upgrade npm for trusted publishing
-        run: |
-          npm install -g npm@11.16.0 --ignore-scripts
-          npm --version
-
-      - name: Publish npm packages
+      - name: Publish GitHub Packages
         run: node scripts/publish.mjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

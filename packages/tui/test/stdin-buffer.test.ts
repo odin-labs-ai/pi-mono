@@ -433,6 +433,42 @@ describe("StdinBuffer", () => {
 			assert.deepStrictEqual(emittedPaste, ["Hello 世界 🎉"]);
 			assert.deepStrictEqual(emittedSequences, []);
 		});
+
+		it("should salvage a paste whose closing marker never arrives", async () => {
+			buffer = new StdinBuffer({ pasteInactivityTimeout: 20, pasteAbsoluteTimeout: 100 });
+			buffer.on("paste", (data) => emittedPaste.push(data));
+			buffer.on("data", (sequence) => emittedSequences.push(sequence));
+
+			processInput("\x1b[200~truncated paste");
+			await wait(30);
+
+			assert.deepStrictEqual(emittedPaste, ["truncated paste"]);
+			processInput("x");
+			assert.deepStrictEqual(emittedSequences, ["x"]);
+		});
+
+		it("should bound a paste even while chunks continue arriving", async () => {
+			buffer = new StdinBuffer({ pasteInactivityTimeout: 80, pasteAbsoluteTimeout: 45 });
+			buffer.on("paste", (data) => emittedPaste.push(data));
+
+			processInput("\x1b[200~one");
+			await wait(20);
+			processInput("-two");
+			await wait(35);
+
+			assert.deepStrictEqual(emittedPaste, ["one-two"]);
+		});
+
+		it("should cancel paste recovery when cleared", async () => {
+			buffer = new StdinBuffer({ pasteInactivityTimeout: 20, pasteAbsoluteTimeout: 100 });
+			buffer.on("paste", (data) => emittedPaste.push(data));
+
+			processInput("\x1b[200~discard me");
+			buffer.clear();
+			await wait(30);
+
+			assert.deepStrictEqual(emittedPaste, []);
+		});
 	});
 
 	describe("Destroy", () => {

@@ -21,10 +21,6 @@ function collectPackageJsonFiles(directory) {
 	}
 }
 
-function isInternalWorkspaceDependency(name) {
-	return name.startsWith("@earendil-works/pi-");
-}
-
 function isNonRegistrySpecifier(specifier) {
 	return /^(?:workspace:|file:|link:|portal:|git\+|github:|git:|https?:|ssh:|git:\/\/)/.test(specifier);
 }
@@ -41,6 +37,23 @@ const failures = [];
 
 collectPackageJsonFiles(".");
 
+const workspaceVersions = new Map();
+for (const file of packageJsonFiles) {
+	const packageJson = JSON.parse(readFileSync(file, "utf8"));
+	if (typeof packageJson.name === "string" && packageJson.name.startsWith("@odinlabs-ai/pi-")) {
+		workspaceVersions.set(packageJson.name, { file, version: packageJson.version });
+	}
+}
+
+const internalVersions = new Set([...workspaceVersions.values()].map(({ version }) => version));
+if (internalVersions.size !== 1) {
+	failures.push(
+		`Odin Pi workspace packages must be lockstep versioned: ${[...workspaceVersions.entries()]
+			.map(([name, { version }]) => `${name}@${version}`)
+			.join(", ")}`,
+	);
+}
+
 for (const file of packageJsonFiles.sort()) {
 	const packageJson = JSON.parse(readFileSync(file, "utf8"));
 
@@ -49,7 +62,18 @@ for (const file of packageJsonFiles.sort()) {
 		if (!dependencies) continue;
 
 		for (const [name, specifier] of Object.entries(dependencies)) {
-			if (isInternalWorkspaceDependency(name) || isNonRegistrySpecifier(specifier)) continue;
+			if (name.startsWith("@odinlabs-ai/pi-")) {
+				const workspacePackage = workspaceVersions.get(name);
+				if (!workspacePackage) {
+					failures.push(`${file}: ${section}.${name} references an unknown Odin Pi workspace package`);
+				} else if (specifier !== workspacePackage.version) {
+					failures.push(
+						`${file}: ${section}.${name} must exactly match ${workspacePackage.version}, found ${specifier}`,
+					);
+				}
+				continue;
+			}
+			if (isNonRegistrySpecifier(specifier)) continue;
 			if (exactVersionPattern.test(getVersionSpecifier(specifier))) continue;
 			failures.push(`${file}: ${section}.${name} must be pinned, found ${specifier}`);
 		}
@@ -57,7 +81,7 @@ for (const file of packageJsonFiles.sort()) {
 }
 
 if (failures.length > 0) {
-	console.error("Direct external dependencies must use exact versions:");
+	console.error("Dependency pinning or lockstep validation failed:");
 	for (const failure of failures) console.error(`  ${failure}`);
 	process.exit(1);
 }

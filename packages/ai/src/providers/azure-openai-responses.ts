@@ -14,9 +14,10 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
+import { resolveStreamIdleTimeoutMs } from "../utils/stream-idle.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, resolveMaxTokens } from "./simple-options.ts";
 
 const DEFAULT_AZURE_API_VERSION = "v1";
 const AZURE_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", "azure-openai-responses"]);
@@ -123,7 +124,9 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 			await options?.onResponse?.({ status: response.status, headers: headersToRecord(response.headers) }, model);
 			stream.push({ type: "start", partial: output });
 
-			await processResponsesStream(openaiStream, output, stream, model);
+			await processResponsesStream(openaiStream, output, stream, model, {
+				idleTimeoutMs: resolveStreamIdleTimeoutMs(options?.timeoutMs, options?.env),
+			});
 
 			if (options?.signal?.aborted) {
 				throw new Error("Request was aborted");
@@ -275,8 +278,9 @@ function buildParams(
 		store: false,
 	};
 
-	if (options?.maxTokens) {
-		params.max_output_tokens = options?.maxTokens;
+	const maxTokens = resolveMaxTokens(model, options?.maxTokens);
+	if (maxTokens > 0) {
+		params.max_output_tokens = maxTokens;
 	}
 
 	if (options?.temperature !== undefined) {

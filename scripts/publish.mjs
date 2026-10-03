@@ -5,11 +5,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const packages = [
-	{ directory: "packages/ai", name: "@earendil-works/pi-ai" },
-	{ directory: "packages/agent", name: "@earendil-works/pi-agent-core" },
-	{ directory: "packages/tui", name: "@earendil-works/pi-tui" },
-	{ directory: "packages/coding-agent", name: "@earendil-works/pi-coding-agent" },
+	{ directory: "packages/ai", name: "@odinlabs-ai/pi-ai" },
+	{ directory: "packages/agent", name: "@odinlabs-ai/pi-agent-core" },
+	{ directory: "packages/tui", name: "@odinlabs-ai/pi-tui" },
+	{ directory: "packages/coding-agent", name: "@odinlabs-ai/pi-coding-agent" },
 ];
+const registry = "https://npm.pkg.github.com";
 
 const dryRun = process.argv.includes("--dry-run");
 const unknownArgs = process.argv.slice(2).filter((arg) => arg !== "--dry-run");
@@ -52,22 +53,34 @@ function assertBuildOutputExists(directory) {
 function validatePack(directory) {
 	const result = run("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], { capture: true, cwd: directory });
 	const packed = JSON.parse(result.stdout)[0];
+	if (typeof packed?.integrity !== "string" || !packed.integrity) {
+		throw new Error(`${directory}: npm pack did not report an integrity value`);
+	}
 	console.log(`  ${packed.filename}: ${packed.files.length} files, ${packed.size} bytes packed, ${packed.unpackedSize} bytes unpacked`);
+	return packed;
 }
 
-function isPublished(name, version) {
-	const result = spawnSync(commandForPlatform("npm"), ["view", `${name}@${version}`, "version", "--json"], {
+function getPublishedIntegrity(name, version) {
+	const result = spawnSync(
+		commandForPlatform("npm"),
+		["view", `${name}@${version}`, "dist.integrity", "--json", "--registry", registry],
+		{
 		encoding: "utf8",
 		stdio: ["inherit", "pipe", "pipe"],
-	});
+		},
+	);
 
 	if (result.status === 0 && result.stdout.trim()) {
-		return true;
+		const integrity = JSON.parse(result.stdout);
+		if (typeof integrity !== "string" || !integrity) {
+			throw new Error(`${name}@${version} is published without dist.integrity`);
+		}
+		return integrity;
 	}
 
 	const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
 	if (result.status !== 0 && (output.includes("E404") || output.includes("404 Not Found"))) {
-		return false;
+		return undefined;
 	}
 
 	throw new Error(output ? `Failed to query ${name}@${version}\n${output}` : `Failed to query ${name}@${version}`);
@@ -89,27 +102,36 @@ if (versions.length !== 1) {
 
 console.log(`Publishing pi packages at ${versions[0]}${dryRun ? " (dry run)" : ""}\n`);
 
+const plans = [];
 for (const pkg of packages) {
 	const version = packageVersions.get(pkg.name);
 	assertBuildOutputExists(pkg.directory);
-	const published = isPublished(pkg.name, version);
+	const packed = validatePack(pkg.directory);
+	const publishedIntegrity = getPublishedIntegrity(pkg.name, version);
+	if (publishedIntegrity && publishedIntegrity !== packed.integrity) {
+		throw new Error(
+			`${pkg.name}@${version} is already published with different contents:\n` +
+				`  local:    ${packed.integrity}\n` +
+				`  registry: ${publishedIntegrity}`,
+		);
+	}
+	plans.push({ ...pkg, packed, publishedIntegrity, version });
+	console.log(
+		publishedIntegrity
+			? `${pkg.name}@${version} is already published with matching integrity.`
+			: `${pkg.name}@${version} is not published.`,
+	);
+	console.log();
+}
 
-	if (dryRun) {
-		if (published) {
-			console.log(`${pkg.name}@${version} is already published; validating package contents only.`);
-		} else {
-			console.log(`${pkg.name}@${version} is not published; validating package contents before publish.`);
-		}
-		validatePack(pkg.directory);
-		console.log();
+if (dryRun) process.exit(0);
+
+for (const plan of plans) {
+	if (plan.publishedIntegrity) {
+		console.log(`Skipping ${plan.name}@${plan.version}: registry integrity matches\n`);
 		continue;
 	}
 
-	if (published) {
-		console.log(`Skipping ${pkg.name}@${version}: already published\n`);
-		continue;
-	}
-
-	run("npm", ["publish", "--access", "public", "--provenance", "--ignore-scripts"], { cwd: pkg.directory });
+	run("npm", ["publish", "--ignore-scripts", "--registry", registry], { cwd: plan.directory });
 	console.log();
 }

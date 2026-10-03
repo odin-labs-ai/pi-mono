@@ -29,8 +29,9 @@ import type {
 } from "../types.ts";
 import type { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
+import { parseFinalToolArguments, parseStreamingJson } from "../utils/json-parse.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { withStreamIdleTimeout } from "../utils/stream-idle.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 // =============================================================================
@@ -64,6 +65,7 @@ function parseTextSignature(
 }
 
 export interface OpenAIResponsesStreamOptions {
+	idleTimeoutMs?: number;
 	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 	resolveServiceTier?: (
 		responseServiceTier: ResponseCreateParamsStreaming["service_tier"] | undefined,
@@ -297,7 +299,9 @@ export async function processResponsesStream<TApi extends Api>(
 	const blocks = output.content;
 	const blockIndex = () => blocks.length - 1;
 
-	for await (const event of openaiStream) {
+	const guardedStream =
+		options?.idleTimeoutMs === undefined ? openaiStream : withStreamIdleTimeout(openaiStream, options.idleTimeoutMs);
+	for await (const event of guardedStream) {
 		if (event.type === "response.created") {
 			output.responseId = event.response.id;
 		} else if (event.type === "response.output_item.added") {
@@ -469,8 +473,8 @@ export async function processResponsesStream<TApi extends Api>(
 			} else if (item.type === "function_call") {
 				const args =
 					currentBlock?.type === "toolCall" && currentBlock.partialJson
-						? parseStreamingJson(currentBlock.partialJson)
-						: parseStreamingJson(item.arguments || "{}");
+						? parseFinalToolArguments(currentBlock.partialJson)
+						: parseFinalToolArguments(item.arguments || "{}");
 
 				let toolCall: ToolCall;
 				if (currentBlock?.type === "toolCall") {

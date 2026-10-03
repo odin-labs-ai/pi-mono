@@ -27,6 +27,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { resolveStreamIdleTimeoutMs, withStreamIdleTimeout } from "../utils/stream-idle.ts";
 import type { GoogleThinkingLevel } from "./google-shared.ts";
 import {
 	convertMessages,
@@ -36,7 +37,7 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, resolveMaxTokens } from "./simple-options.ts";
 
 export interface GoogleVertexOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -106,7 +107,10 @@ export const streamGoogleVertex: StreamFunction<"google-vertex", GoogleVertexOpt
 			let currentBlock: TextContent | ThinkingContent | null = null;
 			const blocks = output.content;
 			const blockIndex = () => blocks.length - 1;
-			for await (const chunk of googleStream) {
+			for await (const chunk of withStreamIdleTimeout(
+				googleStream,
+				resolveStreamIdleTimeoutMs(options?.timeoutMs, options?.env),
+			)) {
 				// Vertex uses the same @google/genai GenerateContentResponse type as Gemini.
 				// responseId is documented there as an output-only identifier for each response.
 				output.responseId ||= chunk.responseId;
@@ -457,9 +461,7 @@ function buildParams(
 	if (options.temperature !== undefined) {
 		generationConfig.temperature = options.temperature;
 	}
-	if (options.maxTokens !== undefined) {
-		generationConfig.maxOutputTokens = options.maxTokens;
-	}
+	generationConfig.maxOutputTokens = resolveMaxTokens(model, options.maxTokens);
 
 	const config: GenerateContentConfig = {
 		...(Object.keys(generationConfig).length > 0 && generationConfig),

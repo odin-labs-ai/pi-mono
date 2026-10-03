@@ -118,6 +118,130 @@ function applyReplacements(content: string, replacements: TextReplacement[], off
 	return result;
 }
 
+interface FuzzyOffsetSegment {
+	normalizedStart: number;
+	normalizedEnd: number;
+	originalStart: number;
+	originalEnd: number;
+}
+
+function normalizeFuzzyUnit(text: string): string {
+	return text
+		.normalize("NFKC")
+		.replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+		.replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+		.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+		.replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ");
+}
+
+function buildFuzzyOffsetSegments(content: string): {
+	normalized: string;
+	segments: FuzzyOffsetSegment[];
+} {
+	const segments: FuzzyOffsetSegment[] = [];
+	const normalizedParts: string[] = [];
+	const lines = content.split("\n");
+	let originalLineStart = 0;
+	let normalizedOffset = 0;
+
+	for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+		const line = lines[lineIndex];
+		const units: Array<{ text: string; normalized: string; start: number; end: number }> = [];
+		let lineOffset = 0;
+
+		for (const codePoint of line) {
+			const start = lineOffset;
+			lineOffset += codePoint.length;
+			const previous = units[units.length - 1];
+			if (previous && /\p{M}/u.test(codePoint)) {
+				const combined = normalizeFuzzyUnit(previous.text + codePoint);
+				if (combined.length <= previous.normalized.length) {
+					previous.text += codePoint;
+					previous.normalized = combined;
+					previous.end = lineOffset;
+					continue;
+				}
+			}
+			units.push({ text: codePoint, normalized: normalizeFuzzyUnit(codePoint), start, end: lineOffset });
+		}
+
+		const untrimmedLine = units.map((unit) => unit.normalized).join("");
+		const normalizedLine = untrimmedLine.trimEnd();
+		let lineNormalizedOffset = 0;
+		for (const unit of units) {
+			const unitEnd = lineNormalizedOffset + unit.normalized.length;
+			if (lineNormalizedOffset >= normalizedLine.length) break;
+			if (unitEnd > normalizedLine.length) {
+				throw new Error("Cannot safely map a fuzzy edit because normalization trimmed part of a source character.");
+			}
+			segments.push({
+				normalizedStart: normalizedOffset + lineNormalizedOffset,
+				normalizedEnd: normalizedOffset + unitEnd,
+				originalStart: originalLineStart + unit.start,
+				originalEnd: originalLineStart + unit.end,
+			});
+			lineNormalizedOffset = unitEnd;
+		}
+		normalizedParts.push(normalizedLine);
+		normalizedOffset += normalizedLine.length;
+
+		if (lineIndex < lines.length - 1) {
+			segments.push({
+				normalizedStart: normalizedOffset,
+				normalizedEnd: normalizedOffset + 1,
+				originalStart: originalLineStart + line.length,
+				originalEnd: originalLineStart + line.length + 1,
+			});
+			normalizedParts.push("\n");
+			normalizedOffset += 1;
+			originalLineStart += line.length + 1;
+		}
+	}
+
+	const normalized = normalizedParts.join("");
+	if (normalized !== normalizeForFuzzyMatch(content)) {
+		throw new Error(
+			"Cannot safely map a fuzzy edit because per-character normalization diverged from whole-text normalization. Re-issue the edit with exact source text.",
+		);
+	}
+	return { normalized, segments };
+}
+
+function mapFuzzyOffset(
+	offset: number,
+	kind: "start" | "end",
+	contentLength: number,
+	normalizedLength: number,
+	segments: FuzzyOffsetSegment[],
+): number {
+	if (offset < 0 || offset > normalizedLength) {
+		throw new Error("Fuzzy replacement range is outside normalized content.");
+	}
+	for (const segment of segments) {
+		if (offset === segment.normalizedStart) return segment.originalStart;
+		if (offset > segment.normalizedStart && offset < segment.normalizedEnd) {
+			return kind === "start" ? segment.originalStart : segment.originalEnd;
+		}
+		if (offset === segment.normalizedEnd) return segment.originalEnd;
+	}
+	return contentLength;
+}
+
+function mapFuzzyReplacementsToOriginal(content: string, replacements: MatchedEdit[]): MatchedEdit[] {
+	const { normalized, segments } = buildFuzzyOffsetSegments(content);
+	return replacements.map((replacement) => {
+		const start = mapFuzzyOffset(replacement.matchIndex, "start", content.length, normalized.length, segments);
+		const end = mapFuzzyOffset(
+			replacement.matchIndex + replacement.matchLength,
+			"end",
+			content.length,
+			normalized.length,
+			segments,
+		);
+		return { ...replacement, matchIndex: start, matchLength: end - start };
+	});
+}
+
 /**
  * Apply replacements matched against `baseContent` to `originalContent` while
  * preserving unchanged line blocks from the original.
@@ -354,9 +478,8 @@ export function applyEditsToNormalizedContent(
 	}
 
 	const baseContent = normalizedContent;
-	const newContent = usedFuzzyMatch
-		? applyReplacementsPreservingUnchangedLines(normalizedContent, replacementBaseContent, matchedEdits)
-		: applyReplacements(replacementBaseContent, matchedEdits);
+	const replacements = usedFuzzyMatch ? mapFuzzyReplacementsToOriginal(normalizedContent, matchedEdits) : matchedEdits;
+	const newContent = applyReplacements(baseContent, replacements);
 
 	if (baseContent === newContent) {
 		throw getNoChangeError(path, normalizedEdits.length);

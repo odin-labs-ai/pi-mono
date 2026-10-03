@@ -1,11 +1,6 @@
 <p align="center">
-  <a href="https://pi.dev">
-    <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
-  </a>
-</p>
-<p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
+  <a href="https://github.com/odin-labs-ai/pi-mono/releases"><img alt="release" src="https://img.shields.io/github/v/release/odin-labs-ai/pi-mono?style=flat-square" /></a>
 </p>
 
 > New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
@@ -63,16 +58,12 @@ I regularly publish my own `pi-mono` work sessions here:
 ## Quick Start
 
 ```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+npm config set @odinlabs-ai:registry https://npm.pkg.github.com
+npm login --scope=@odinlabs-ai --auth-type=legacy --registry=https://npm.pkg.github.com
+npm install -g --ignore-scripts @odinlabs-ai/pi-coding-agent
 ```
 
-`--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
-
-Installer alternative:
-
-```bash
-curl -fsSL https://pi.dev/install.sh | sh
-```
+At the login prompts, use your GitHub username and a token with `read:packages` as the password. `--ignore-scripts` disables dependency lifecycle scripts during install; Pi does not require install scripts for normal npm installs.
 
 Authenticate with an API key:
 
@@ -299,14 +290,14 @@ If no extension or saved decision applies, `defaultProjectTrust` controls the fa
 
 Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.pi/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
 
-### Telemetry and update checks
+### Provider attribution and update checks
 
-Pi has two separate startup features:
+Pi has no install or update telemetry. Two independent controls remain:
 
-- **Update check:** fetches `https://pi.dev/api/latest-version` to check whether a newer Pi version exists. Disable it with `PI_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
-- **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://pi.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `PI_TELEMETRY=0`. This does not disable update checks; Pi may still contact `pi.dev` for the latest version unless update checks are disabled or offline mode is enabled.
+- **Update check:** queries the Odin Pi repository's GitHub Releases API for a newer version. Disable it with `PI_SKIP_VERSION_CHECK=1`.
+- **Provider attribution:** adds Odin Pi identification headers to requests sent to supported model providers. It does not make a separate network request. Disable it with `enableProviderAttribution: false` in `settings.json` or `PI_PROVIDER_ATTRIBUTION=0`. Existing `enableInstallTelemetry: false` and `PI_TELEMETRY=0` opt-outs remain honored as migration fallbacks; the new names take precedence.
 
-Use `--offline` or `PI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+Use `--offline` or `PI_OFFLINE=1` to disable startup update and package checks.
 
 ---
 
@@ -452,7 +443,7 @@ See [docs/packages.md](docs/packages.md).
 ### SDK
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@odinlabs-ai/pi-coding-agent";
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
@@ -659,9 +650,9 @@ pi --thinking high "Solve this complex problem"
 | `PI_CODING_AGENT_DIR` | Override config directory (default: `~/.pi/agent`) |
 | `PI_CODING_AGENT_SESSION_DIR` | Override session storage directory (overridden by `--session-dir`) |
 | `PI_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
-| `PI_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
-| `PI_SKIP_VERSION_CHECK` | Skip the Pi version update check at startup. This prevents the `pi.dev` latest-version request |
-| `PI_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
+| `PI_OFFLINE` | Disable startup network operations, including release and package update checks |
+| `PI_SKIP_VERSION_CHECK` | Skip the Odin Pi GitHub release check at startup |
+| `PI_PROVIDER_ATTRIBUTION` | Override provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
 | `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | External editor for Ctrl+G |
 
@@ -677,12 +668,6 @@ MIT
 
 ## See Also
 
-- [@earendil-works/pi-ai](https://www.npmjs.com/package/@earendil-works/pi-ai): Core LLM toolkit
-- [@earendil-works/pi-agent-core](https://www.npmjs.com/package/@earendil-works/pi-agent-core): Agent framework
-- [@earendil-works/pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui): Terminal UI components
-
-<p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-</p>
+- [@odinlabs-ai/pi-ai](https://github.com/orgs/odin-labs-ai/packages/npm/package/pi-ai): Core LLM toolkit
+- [@odinlabs-ai/pi-agent-core](https://github.com/orgs/odin-labs-ai/packages/npm/package/pi-agent-core): Agent framework
+- [@odinlabs-ai/pi-tui](https://github.com/orgs/odin-labs-ai/packages/npm/package/pi-tui): Terminal UI components

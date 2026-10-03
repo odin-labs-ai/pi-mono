@@ -1,7 +1,8 @@
 import { compare, valid } from "semver";
 import { getPiUserAgent } from "./pi-user-agent.ts";
 
-const LATEST_VERSION_URL = "https://pi.dev/api/latest-version";
+const LATEST_RELEASE_URL = "https://api.github.com/repos/odin-labs-ai/pi-mono/releases/latest";
+const ODIN_PACKAGE_NAME = "@odinlabs-ai/pi-coding-agent";
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
 export interface LatestPiRelease {
@@ -33,29 +34,32 @@ export async function getLatestPiRelease(
 ): Promise<LatestPiRelease | undefined> {
 	if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) return undefined;
 
-	const response = await fetch(LATEST_VERSION_URL, {
+	const response = await fetch(LATEST_RELEASE_URL, {
 		headers: {
 			"User-Agent": getPiUserAgent(currentVersion),
-			accept: "application/json",
+			accept: "application/vnd.github+json",
+			"X-GitHub-Api-Version": "2022-11-28",
 		},
 		signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_VERSION_CHECK_TIMEOUT_MS),
 	});
 	if (!response.ok) return undefined;
 
 	const data = (await response.json()) as {
-		packageName?: unknown;
-		version?: unknown;
-		note?: unknown;
+		tag_name?: unknown;
+		body?: unknown;
 	};
-	if (typeof data.version !== "string" || !data.version.trim()) {
+	if (typeof data.tag_name !== "string" || !data.tag_name.trim()) {
 		return undefined;
 	}
-	const packageName =
-		typeof data.packageName === "string" && data.packageName.trim() ? data.packageName.trim() : undefined;
-	const note = typeof data.note === "string" && data.note.trim() ? data.note.trim() : undefined;
+	const tag = data.tag_name.trim();
+	const version = tag.startsWith("v") ? tag.slice(1) : tag;
+	if (!valid(version)) {
+		return undefined;
+	}
+	const note = typeof data.body === "string" && data.body.trim() ? data.body.trim() : undefined;
 	return {
-		version: data.version.trim(),
-		packageName,
+		version,
+		packageName: ODIN_PACKAGE_NAME,
 		...(note ? { note } : {}),
 	};
 }

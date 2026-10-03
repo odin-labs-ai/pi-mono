@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.79.10-odin.1] - 2026-10-03
+
+### Breaking Changes
+
+- Changed the package scope from `@earendil-works/pi-tui` to `@odinlabs-ai/pi-tui` for the Odin-maintained release line.
+- Raised the supported Node.js floor to 22.19.0.
+
+### Fixed
+
+- Fixed unterminated bracketed paste input to recover after bounded inactivity while keeping later keyboard input responsive.
+
 ## [0.79.10] - 2026-06-22
 
 ## [0.79.9] - 2026-06-20

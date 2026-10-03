@@ -18,11 +18,12 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
+import { resolveStreamIdleTimeoutMs } from "../utils/stream-idle.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, resolveMaxTokens } from "./simple-options.ts";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 
@@ -132,6 +133,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
 			stream.push({ type: "start", partial: output });
 
 			await processResponsesStream(openaiStream, output, stream, model, {
+				idleTimeoutMs: resolveStreamIdleTimeoutMs(options?.timeoutMs, options?.env),
 				serviceTier: options?.serviceTier,
 				applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
 			});
@@ -252,8 +254,9 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		store: false,
 	};
 
-	if (options?.maxTokens) {
-		params.max_output_tokens = options?.maxTokens;
+	const maxTokens = resolveMaxTokens(model, options?.maxTokens);
+	if (maxTokens > 0) {
+		params.max_output_tokens = maxTokens;
 	}
 
 	if (options?.temperature !== undefined) {

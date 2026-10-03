@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.79.10-odin.1] - 2026-10-03
+
+### Breaking Changes
+
+- Changed the package scope from `@earendil-works/pi-agent-core` to `@odinlabs-ai/pi-agent-core` for the Odin-maintained release line.
+- Raised the supported Node.js floor to 22.19.0.
+
 ## [0.79.10] - 2026-06-22
 
 ## [0.79.9] - 2026-06-20

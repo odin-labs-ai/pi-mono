@@ -9,10 +9,10 @@ const repoRoot = resolve(scriptDir, "..");
 const codingAgentDir = join(repoRoot, "packages/coding-agent");
 const rootLockfilePath = join(repoRoot, "package-lock.json");
 const shrinkwrapPath = join(codingAgentDir, "npm-shrinkwrap.json");
-const internalPackagePrefix = "@earendil-works/pi-";
+const internalPackagePrefix = "@odinlabs-ai/pi-";
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@1.52.0", "preinstall is a no-op in the published package"],
-	["protobufjs@7.6.4", "postinstall only warns about protobufjs version scheme mismatches"],
+	["protobufjs@7.6.6", "postinstall only warns about protobufjs version scheme mismatches"],
 ]);
 
 const args = new Set(process.argv.slice(2));
@@ -124,11 +124,6 @@ function packageNameFromLockPath(lockPath) {
 	return parts[0];
 }
 
-function registryTarballUrl(packageName, version) {
-	const tarballName = packageName.startsWith("@") ? packageName.split("/")[1] : packageName;
-	return `https://registry.npmjs.org/${packageName}/-/${tarballName}-${version}.tgz`;
-}
-
 function getInternalWorkspaces(lockPackages) {
 	const workspaces = new Map();
 
@@ -196,7 +191,6 @@ function addInternalWorkspace(shrinkwrapPackages, addedPaths, queue, name, works
 	const packageJson = workspace.packageJson;
 	const outputPath = `node_modules/${name}`;
 	const entry = copyPackageJsonEntry(packageJson, { includeName: false });
-	entry.resolved = registryTarballUrl(name, packageJson.version);
 
 	shrinkwrapPackages[outputPath] = sortedPackageEntry(entry);
 	addedPaths.add(outputPath);

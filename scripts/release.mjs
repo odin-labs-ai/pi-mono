@@ -3,8 +3,9 @@
  * Release script for pi-mono
  *
  * Usage:
- *   node scripts/release.mjs <major|minor|patch>
- *   node scripts/release.mjs <x.y.z>
+ *   node scripts/release.mjs current [--dry-run]
+ *   node scripts/release.mjs <minor|patch>
+ *   node scripts/release.mjs <semver>
  *
  * Steps:
  * 1. Check for uncommitted changes
@@ -21,13 +22,20 @@
 import { execSync } from "child_process";
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
+import { valid } from "semver";
 
 const RELEASE_TARGET = process.argv[2];
-const BUMP_TYPES = new Set(["major", "minor", "patch"]);
-const SEMVER_RE = /^\d+\.\d+\.\d+$/;
+const RELEASE_OPTIONS = process.argv.slice(3);
+const BUMP_TYPES = new Set(["minor", "patch"]);
+const DRY_RUN = RELEASE_OPTIONS.includes("--dry-run");
 
-if (!RELEASE_TARGET || (!BUMP_TYPES.has(RELEASE_TARGET) && !SEMVER_RE.test(RELEASE_TARGET))) {
-	console.error("Usage: node scripts/release.mjs <major|minor|patch|x.y.z>");
+if (
+	!RELEASE_TARGET ||
+	(RELEASE_TARGET !== "current" && !BUMP_TYPES.has(RELEASE_TARGET) && !valid(RELEASE_TARGET)) ||
+	RELEASE_OPTIONS.some((option) => option !== "--dry-run") ||
+	(DRY_RUN && RELEASE_TARGET !== "current")
+) {
+	console.error("Usage: node scripts/release.mjs current [--dry-run] | <minor|patch|explicit-semver>");
 	process.exit(1);
 }
 
@@ -49,20 +57,6 @@ function getVersion() {
 	return pkg.version;
 }
 
-function compareVersions(a, b) {
-	const aParts = a.split(".").map(Number);
-	const bParts = b.split(".").map(Number);
-
-	for (let i = 0; i < 3; i++) {
-		const diff = (aParts[i] || 0) - (bParts[i] || 0);
-		if (diff !== 0) {
-			return diff;
-		}
-	}
-
-	return 0;
-}
-
 function shellQuote(value) {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -78,21 +72,14 @@ function stageChangedFiles() {
 }
 
 function bumpOrSetVersion(target) {
-	const currentVersion = getVersion();
-
 	if (BUMP_TYPES.has(target)) {
 		console.log(`Bumping version (${target})...`);
 		run(`npm run version:${target}`);
 		return getVersion();
 	}
 
-	if (compareVersions(target, currentVersion) <= 0) {
-		console.error(`Error: explicit version ${target} must be greater than current version ${currentVersion}.`);
-		process.exit(1);
-	}
-
 	console.log(`Setting explicit version (${target})...`);
-	run(`npm version ${target} -ws --no-git-tag-version && node scripts/sync-versions.js && npm install --package-lock-only --ignore-scripts`);
+	run(`node scripts/version.mjs ${shellQuote(target)}`);
 	return getVersion();
 }
 
@@ -142,6 +129,43 @@ function addUnreleasedSection() {
 	}
 }
 
+function assertPreparedCurrentRelease(version) {
+	if (!valid(version)) {
+		console.error(`Error: current package version is not valid SemVer: ${version}`);
+		process.exit(1);
+	}
+
+	for (const changelog of getChangelogs()) {
+		const content = readFileSync(changelog, "utf-8");
+		if (!content.includes(`## [${version}] - `)) {
+			console.error(`Error: ${changelog} does not contain a prepared ${version} release section.`);
+			process.exit(1);
+		}
+		if (!content.includes("## [Unreleased]")) {
+			console.error(`Error: ${changelog} has no next-cycle [Unreleased] section.`);
+			process.exit(1);
+		}
+	}
+}
+
+function assertReleaseHead() {
+	const branch = run("git branch --show-current", { silent: true })?.trim();
+	if (branch !== "main") {
+		console.error(`Error: releases must run from main, not ${branch || "a detached HEAD"}.`);
+		process.exit(1);
+	}
+
+	run("git fetch --quiet origin main --tags");
+	const head = run("git rev-parse HEAD", { silent: true })?.trim();
+	const originMain = run("git rev-parse refs/remotes/origin/main", { silent: true })?.trim();
+	if (!head || !originMain || head !== originMain) {
+		console.error("Error: local main must exactly match origin/main before releasing.");
+		console.error(`  local:  ${head || "<unresolved>"}`);
+		console.error(`  origin: ${originMain || "<unresolved>"}`);
+		process.exit(1);
+	}
+}
+
 // Main flow
 console.log("\n=== Release Script ===\n");
 
@@ -154,6 +178,37 @@ if (status && status.trim()) {
 	process.exit(1);
 }
 console.log("  Working directory clean\n");
+assertReleaseHead();
+
+if (RELEASE_TARGET === "current") {
+	const version = getVersion();
+	assertPreparedCurrentRelease(version);
+	console.log(`Validating prepared release v${version}...`);
+	run("npm run check");
+	const postCheckStatus = run("git status --porcelain", { silent: true });
+	if (postCheckStatus && postCheckStatus.trim()) {
+		console.error("Error: validation changed tracked files; review and commit them before tagging.");
+		console.error(postCheckStatus);
+		process.exit(1);
+	}
+	const existingTag = run(`git rev-parse --verify ${shellQuote(`refs/tags/v${version}`)}`, {
+		silent: true,
+		ignoreError: true,
+	});
+	if (existingTag) {
+		console.error(`Error: tag v${version} already exists; do not rerun the release.`);
+		process.exit(1);
+	}
+	assertReleaseHead();
+	if (DRY_RUN) {
+		console.log(`=== Prepared release v${version} passed validation; no tag or push was created ===`);
+		process.exit(0);
+	}
+	run(`git tag v${version}`);
+	run(`git push --atomic origin main ${shellQuote(`refs/tags/v${version}`)}`);
+	console.log(`=== Tagged prepared release v${version}; CI publishing starts after the tag push ===`);
+	process.exit(0);
+}
 
 // 2. Bump or set version
 const version = bumpOrSetVersion(RELEASE_TARGET);
@@ -166,8 +221,7 @@ console.log();
 
 // 4. Regenerate release artifacts
 console.log("Regenerating release artifacts...");
-run("npm --prefix packages/ai run generate-models");
-run("npm --prefix packages/ai run generate-image-models");
+run("npm --prefix packages/ai run refresh-models");
 run("npm run shrinkwrap:coding-agent");
 console.log();
 
@@ -196,8 +250,7 @@ console.log();
 
 // 9. Push
 console.log("Pushing to remote...");
-run("git push origin main");
-run(`git push origin v${version}`);
+run(`git push --atomic origin main ${shellQuote(`refs/tags/v${version}`)}`);
 console.log();
 
 console.log(`=== Prepared release v${version}; CI publishing starts after the tag push ===`);

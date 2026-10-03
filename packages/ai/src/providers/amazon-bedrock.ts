@@ -49,11 +49,12 @@ import type {
 	ToolResultMessage,
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
+import { parseFinalToolArguments, parseStreamingJson } from "../utils/json-parse.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
-import { adjustMaxTokensForThinking, buildBaseOptions, clampReasoning } from "./simple-options.ts";
+import { resolveStreamIdleTimeoutMs, withStreamIdleTimeout } from "../utils/stream-idle.ts";
+import { adjustMaxTokensForThinking, buildBaseOptions, clampReasoning, resolveMaxTokens } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 export type BedrockThinkingDisplay = "summarized" | "omitted";
@@ -209,13 +210,13 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				addCustomHeadersMiddleware(client, options.headers);
 			}
 			const cacheRetention = resolveCacheRetention(options.cacheRetention, options.env);
-			const inferenceMaxTokens = options.maxTokens ?? (isAnthropicClaudeModel(model) ? model.maxTokens : undefined);
+			const inferenceMaxTokens = resolveMaxTokens(model, options.maxTokens);
 			let commandInput = {
 				modelId: model.id,
 				messages: convertMessages(context, model, cacheRetention, options.env),
 				system: buildSystemPrompt(context.systemPrompt, model, cacheRetention, options.env),
 				inferenceConfig: {
-					...(inferenceMaxTokens !== undefined && { maxTokens: inferenceMaxTokens }),
+					maxTokens: inferenceMaxTokens,
 					...(options.temperature !== undefined && { temperature: options.temperature }),
 				},
 				toolConfig: convertToolConfig(context.tools, options.toolChoice),
@@ -237,7 +238,10 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				await options?.onResponse?.({ status: response.$metadata.httpStatusCode, headers: responseHeaders }, model);
 			}
 
-			for await (const item of response.stream!) {
+			for await (const item of withStreamIdleTimeout(
+				response.stream!,
+				resolveStreamIdleTimeoutMs(options.timeoutMs, options.env),
+			)) {
 				if (item.messageStart) {
 					if (item.messageStart.role !== ConversationRole.ASSISTANT) {
 						throw new Error("Unexpected assistant message start but got user message start instead");
@@ -537,7 +541,7 @@ function handleContentBlockStop(
 			stream.push({ type: "thinking_end", contentIndex: index, content: block.thinking, partial: output });
 			break;
 		case "toolCall":
-			block.arguments = parseStreamingJson(block.partialJson);
+			block.arguments = parseFinalToolArguments(block.partialJson);
 			// Finalize in-place and strip the scratch buffer so replay only
 			// carries parsed arguments.
 			delete (block as Block).partialJson;

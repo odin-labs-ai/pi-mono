@@ -31,13 +31,14 @@ import type {
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.ts";
+import { parseFinalToolArguments, parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { readWithStreamIdleTimeout, resolveStreamIdleTimeoutMs } from "../utils/stream-idle.ts";
 
 import { resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
-import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.ts";
+import { adjustMaxTokensForThinking, buildBaseOptions, resolveMaxTokens } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 /**
@@ -353,6 +354,7 @@ function consumeLine(text: string): { line: string; rest: string } | null {
 async function* iterateSseMessages(
 	body: ReadableStream<Uint8Array>,
 	signal?: AbortSignal,
+	idleTimeoutMs = 0,
 ): AsyncGenerator<ServerSentEvent> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
@@ -365,7 +367,7 @@ async function* iterateSseMessages(
 				throw new Error("Request was aborted");
 			}
 
-			const { value, done } = await reader.read();
+			const { value, done } = await readWithStreamIdleTimeout(reader, idleTimeoutMs);
 			if (done) {
 				break;
 			}
@@ -412,6 +414,7 @@ async function* iterateSseMessages(
 async function* iterateAnthropicEvents(
 	response: Response,
 	signal?: AbortSignal,
+	idleTimeoutMs = 0,
 ): AsyncGenerator<RawMessageStreamEvent> {
 	if (!response.body) {
 		throw new Error("Attempted to iterate over an Anthropic response with no body");
@@ -420,7 +423,7 @@ async function* iterateAnthropicEvents(
 	let sawMessageStart = false;
 	let sawMessageEnd = false;
 
-	for await (const sse of iterateSseMessages(response.body, signal)) {
+	for await (const sse of iterateSseMessages(response.body, signal, idleTimeoutMs)) {
 		if (sse.event === "error") {
 			throw new Error(sse.data);
 		}
@@ -531,7 +534,11 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
 			const blocks = output.content as Block[];
 
-			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
+			for await (const event of iterateAnthropicEvents(
+				response,
+				options?.signal,
+				resolveStreamIdleTimeoutMs(options?.timeoutMs, options?.env),
+			)) {
 				if (event.type === "message_start") {
 					output.responseId = event.message.id;
 					// Capture initial token usage from message_start event
@@ -653,7 +660,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
-							block.arguments = parseStreamingJson(block.partialJson);
+							block.arguments = parseFinalToolArguments(block.partialJson);
 							// Finalize in-place and strip the scratch buffer so replay only
 							// carries parsed arguments.
 							delete (block as { partialJson?: string }).partialJson;
@@ -921,7 +928,7 @@ function buildParams(
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
 		messages: convertMessages(context.messages, model, isOAuthToken, cacheControl, compat.allowEmptySignature),
-		max_tokens: options?.maxTokens ?? model.maxTokens,
+		max_tokens: resolveMaxTokens(model, options?.maxTokens),
 		stream: true,
 	};
 

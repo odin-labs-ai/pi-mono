@@ -1,5 +1,5 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Transport } from "@earendil-works/pi-ai";
+import type { ThinkingLevel } from "@odinlabs-ai/pi-agent-core";
+import type { Transport } from "@odinlabs-ai/pi-ai";
 import {
 	type Component,
 	Container,
@@ -11,7 +11,7 @@ import {
 	SettingsList,
 	Spacer,
 	Text,
-} from "@earendil-works/pi-tui";
+} from "@odinlabs-ai/pi-tui";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../../core/http-dispatcher.ts";
 import type { DefaultProjectTrust, WarningSettings } from "../../../core/settings-manager.ts";
 import {
@@ -66,7 +66,7 @@ export interface SettingsConfig {
 	availableThemes: string[];
 	hideThinkingBlock: boolean;
 	collapseChangelog: boolean;
-	enableInstallTelemetry: boolean;
+	enableProviderAttribution: boolean;
 	doubleEscapeAction: "fork" | "tree" | "none";
 	treeFilterMode: "default" | "no-tools" | "user-only" | "labeled-only" | "all";
 	showHardwareCursor: boolean;
@@ -95,7 +95,7 @@ export interface SettingsCallbacks {
 	onThemePreview?: (theme: string) => void;
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
-	onEnableInstallTelemetryChange: (enabled: boolean) => void;
+	onEnableProviderAttributionChange: (enabled: boolean) => void;
 	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onTreeFilterModeChange: (mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
@@ -534,10 +534,10 @@ export class SettingsSelectorComponent extends Container {
 				values: ["true", "false"],
 			},
 			{
-				id: "install-telemetry",
-				label: "Install telemetry",
-				description: "Send an anonymous version/update ping after changelog-detected updates",
-				currentValue: config.enableInstallTelemetry ? "true" : "false",
+				id: "provider-attribution",
+				label: "Provider attribution",
+				description: "Identify Odin Pi in supported provider request headers",
+				currentValue: config.enableProviderAttribution ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
@@ -758,8 +758,8 @@ export class SettingsSelectorComponent extends Container {
 					case "quiet-startup":
 						callbacks.onQuietStartupChange(newValue === "true");
 						break;
-					case "install-telemetry":
-						callbacks.onEnableInstallTelemetryChange(newValue === "true");
+					case "provider-attribution":
+						callbacks.onEnableProviderAttributionChange(newValue === "true");
 						break;
 					case "default-project-trust": {
 						const defaultProjectTrust = DEFAULT_PROJECT_TRUST_BY_LABEL.get(newValue);

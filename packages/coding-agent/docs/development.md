@@ -1,11 +1,11 @@
 # Development
 
-See [AGENTS.md](https://github.com/earendil-works/pi-mono/blob/main/AGENTS.md) for additional guidelines.
+See [AGENTS.md](https://github.com/odin-labs-ai/pi-mono/blob/main/AGENTS.md) for additional guidelines.
 
 ## Setup
 
 ```bash
-git clone https://github.com/earendil-works/pi-mono
+git clone https://github.com/odin-labs-ai/pi-mono
 cd pi-mono
 npm install
 npm run build

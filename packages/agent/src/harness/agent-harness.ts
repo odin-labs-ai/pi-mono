@@ -4,7 +4,7 @@ import {
 	type Model,
 	streamSimple,
 	type UserMessage,
-} from "@earendil-works/pi-ai/base";
+} from "@odinlabs-ai/pi-ai/base";
 import { runAgentLoop } from "../agent-loop.ts";
 import type {
 	AgentContext,

@@ -23,11 +23,9 @@ coding agent trivially and this cannot be protected against.
 
 ## Reporting a Vulnerability
 
-If you believe you found a security vulnerability in pi or another package in
-this repository, please report it privately by either:
-
-- Emailing `security@earendil.com`, or
-- Opening a private report through GitHub Security Advisories for this repository
+If you believe you found a security vulnerability in Pi or another package in
+this repository, open a private report through GitHub Security Advisories for
+`odin-labs-ai/pi-mono`.
 
 Please include:
 
@@ -41,9 +39,8 @@ reports and coordinate disclosure as appropriate.
 
 ## Scope
 
-Security issues in the distributed packages, command-line tools, APIs, and
-repository code are in scope as well as earendil operated infrastricture
-on `pi.dev`.
+Security issues in the Odin-distributed packages, command-line tools, APIs, and
+repository code are in scope.
 
 ## Out Of Scope
 
@@ -83,5 +80,5 @@ When possible, include the exact affected path, package version or commit SHA,
 configuration, and a proof of concept against the latest release or latest
 `main`.  For dependency reports, include evidence that the shipped dependency is
 affected and that the issue is reachable through Pi.  For exposed-secret reports,
-include evidence that the credential is owned by Earendil or grants access to
-Earendil-operated infrastructure or services.
+include evidence that the credential is owned by Odin Labs or grants access to
+Odin-operated infrastructure or services.

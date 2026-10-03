@@ -1,21 +1,24 @@
 import path from "node:path";
 import { existsSync, readFileSync } from "fs";
+import { compare as compareSemver, valid as validSemver } from "semver";
 
 export interface ChangelogEntry {
+	version?: string;
 	major: number;
 	minor: number;
 	patch: number;
 	content: string;
 }
 
-const GITHUB_REPO = "earendil-works/pi";
+const GITHUB_REPO = "odin-labs-ai/pi-mono";
 const CHANGELOG_LINK_BASE_PATH = "packages/coding-agent";
 const LEGACY_REPO_RE = /^https:\/\/github\.com\/(?:badlogic|earendil-works)\/pi-mono(?=\/|$)/;
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
 const INLINE_MARKDOWN_LINK_RE = /(!?\[[^\]\n]+\]\()([^\s)]+)((?:\s+[^)]*)?\))/g;
+const CHANGELOG_VERSION_HEADER_RE = /^##\s+\[?((\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\]?/m;
 
 function entryVersion(entry: ChangelogEntry): string {
-	return `${entry.major}.${entry.minor}.${entry.patch}`;
+	return entry.version ?? `${entry.major}.${entry.minor}.${entry.patch}`;
 }
 
 function normalizeTag(version: string | ChangelogEntry): string {
@@ -104,6 +107,10 @@ export function normalizeChangelogLinks(markdown: string, version: string | Chan
 	});
 }
 
+export function getChangelogVersion(markdown: string): string | undefined {
+	return markdown.match(CHANGELOG_VERSION_HEADER_RE)?.[1];
+}
+
 /**
  * Parse changelog entries from CHANGELOG.md
  * Scans for ## lines and collects content until next ## or EOF
@@ -119,7 +126,7 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
 		const entries: ChangelogEntry[] = [];
 
 		let currentLines: string[] = [];
-		let currentVersion: { major: number; minor: number; patch: number } | null = null;
+		let currentVersion: { version: string; major: number; minor: number; patch: number } | null = null;
 
 		for (const line of lines) {
 			// Check if this is a version header (## [x.y.z] ...)
@@ -133,12 +140,13 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
 				}
 
 				// Try to parse version from this line
-				const versionMatch = line.match(/##\s+\[?(\d+)\.(\d+)\.(\d+)\]?/);
+				const versionMatch = line.match(CHANGELOG_VERSION_HEADER_RE);
 				if (versionMatch) {
 					currentVersion = {
-						major: Number.parseInt(versionMatch[1], 10),
-						minor: Number.parseInt(versionMatch[2], 10),
-						patch: Number.parseInt(versionMatch[3], 10),
+						version: versionMatch[1],
+						major: Number.parseInt(versionMatch[2], 10),
+						minor: Number.parseInt(versionMatch[3], 10),
+						patch: Number.parseInt(versionMatch[4], 10),
 					};
 					currentLines = [line];
 				} else {
@@ -171,6 +179,9 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
  * Compare versions. Returns: -1 if v1 < v2, 0 if v1 === v2, 1 if v1 > v2
  */
 export function compareVersions(v1: ChangelogEntry, v2: ChangelogEntry): number {
+	const left = validSemver(entryVersion(v1));
+	const right = validSemver(entryVersion(v2));
+	if (left && right) return compareSemver(left, right);
 	if (v1.major !== v2.major) return v1.major - v2.major;
 	if (v1.minor !== v2.minor) return v1.minor - v2.minor;
 	return v1.patch - v2.patch;
@@ -180,9 +191,16 @@ export function compareVersions(v1: ChangelogEntry, v2: ChangelogEntry): number 
  * Get entries newer than lastVersion
  */
 export function getNewEntries(entries: ChangelogEntry[], lastVersion: string): ChangelogEntry[] {
+	const normalizedLastVersion = lastVersion.trim().replace(/^v/, "");
+	const exactEntryIndex = entries.findIndex((entry) => entryVersion(entry) === normalizedLastVersion);
+	if (exactEntryIndex >= 0) {
+		return entries.slice(0, exactEntryIndex);
+	}
+
 	// Parse lastVersion
-	const parts = lastVersion.split(".").map(Number);
+	const parts = normalizedLastVersion.split(".").map(Number);
 	const last: ChangelogEntry = {
+		version: normalizedLastVersion,
 		major: parts[0] || 0,
 		minor: parts[1] || 0,
 		patch: parts[2] || 0,

@@ -122,3 +122,27 @@ export function parseStreamingJson<T = Record<string, unknown>>(partialJson: str
 		}
 	}
 }
+
+/**
+ * Parse the final argument payload for a streamed tool call.
+ *
+ * Partial JSON recovery is useful while rendering a live preview, but it must
+ * never be used for the object that a tool executes: a truncated string can be
+ * repaired into a different, valid value. Final payloads may still use the
+ * existing control-character and invalid-escape repair, but their JSON
+ * structure must be complete.
+ */
+export function parseFinalToolArguments<T = Record<string, unknown>>(json: string | undefined): T {
+	if (!json || json.trim() === "") {
+		return {} as T;
+	}
+
+	try {
+		return parseJsonWithRepair<T>(json);
+	} catch (cause) {
+		throw new Error(
+			"Tool-call arguments were truncated or malformed at stream completion. Re-issue the tool call with complete JSON arguments.",
+			{ cause },
+		);
+	}
+}

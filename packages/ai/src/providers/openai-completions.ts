@@ -34,13 +34,14 @@ import type {
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
+import { parseFinalToolArguments, parseStreamingJson } from "../utils/json-parse.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { resolveStreamIdleTimeoutMs, withStreamIdleTimeout } from "../utils/stream-idle.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, resolveMaxTokens } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 /**
@@ -220,7 +221,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 						partial: output,
 					});
 				} else if (block.type === "toolCall") {
-					block.arguments = parseStreamingJson(block.partialArgs);
+					block.arguments = parseFinalToolArguments(block.partialArgs);
 					// Finalize in-place and strip the scratch buffers so replay only
 					// carries parsed arguments.
 					delete block.partialArgs;
@@ -302,7 +303,10 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 				return block;
 			};
 
-			for await (const chunk of openaiStream) {
+			for await (const chunk of withStreamIdleTimeout(
+				openaiStream,
+				resolveStreamIdleTimeoutMs(options?.timeoutMs, options?.env),
+			)) {
 				if (!chunk || typeof chunk !== "object") continue;
 
 				// OpenAI documents ChatCompletionChunk.id as the unique chat completion identifier,
@@ -571,11 +575,12 @@ function buildParams(
 		params.store = false;
 	}
 
-	if (options?.maxTokens) {
+	const maxTokens = resolveMaxTokens(model, options?.maxTokens);
+	if (maxTokens > 0) {
 		if (compat.maxTokensField === "max_tokens") {
-			(params as any).max_tokens = options.maxTokens;
+			(params as any).max_tokens = maxTokens;
 		} else {
-			params.max_completion_tokens = options.maxTokens;
+			params.max_completion_tokens = maxTokens;
 		}
 	}
 

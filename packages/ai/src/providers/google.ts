@@ -22,6 +22,7 @@ import type {
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { resolveStreamIdleTimeoutMs, withStreamIdleTimeout } from "../utils/stream-idle.ts";
 import type { GoogleThinkingLevel } from "./google-shared.ts";
 import {
 	convertMessages,
@@ -31,7 +32,7 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, resolveMaxTokens } from "./simple-options.ts";
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -88,7 +89,10 @@ export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions>
 			let currentBlock: TextContent | ThinkingContent | null = null;
 			const blocks = output.content;
 			const blockIndex = () => blocks.length - 1;
-			for await (const chunk of googleStream) {
+			for await (const chunk of withStreamIdleTimeout(
+				googleStream,
+				resolveStreamIdleTimeoutMs(options?.timeoutMs, options?.env),
+			)) {
 				// @google/genai documents GenerateContentResponse.responseId as an output-only field
 				// used to identify each response. Keep the first non-empty one from the stream.
 				output.responseId ||= chunk.responseId;
@@ -355,9 +359,7 @@ function buildParams(
 	if (options.temperature !== undefined) {
 		generationConfig.temperature = options.temperature;
 	}
-	if (options.maxTokens !== undefined) {
-		generationConfig.maxOutputTokens = options.maxTokens;
-	}
+	generationConfig.maxOutputTokens = resolveMaxTokens(model, options.maxTokens);
 
 	const config: GenerateContentConfig = {
 		...(Object.keys(generationConfig).length > 0 && generationConfig),

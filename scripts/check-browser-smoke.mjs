@@ -31,7 +31,7 @@ try {
 	});
 	const baseBuild = await build({
 		stdin: {
-			contents: `import { complete } from "@earendil-works/pi-ai/base";\nimport { Agent } from "@earendil-works/pi-agent-core/base";\nconsole.log(typeof complete, typeof Agent);\n`,
+			contents: `import { complete } from "@odinlabs-ai/pi-ai/base";\nimport { Agent } from "@odinlabs-ai/pi-agent-core/base";\nconsole.log(typeof complete, typeof Agent);\n`,
 			resolveDir: process.cwd(),
 			sourcefile: "pi-browser-base-smoke-entry.ts",
 		},
@@ -49,7 +49,7 @@ try {
 	}
 	await build({
 		stdin: {
-			contents: `import { register as registerAnthropic } from "@earendil-works/pi-ai/anthropic";\nimport { register as registerOpenAICompletions } from "@earendil-works/pi-ai/openai-completions";\nimport { register as registerOpenRouterImages } from "@earendil-works/pi-ai/openrouter-images";\nconsole.log(typeof registerAnthropic, typeof registerOpenAICompletions, typeof registerOpenRouterImages);\n`,
+			contents: `import { register as registerAnthropic } from "@odinlabs-ai/pi-ai/anthropic";\nimport { register as registerOpenAICompletions } from "@odinlabs-ai/pi-ai/openai-completions";\nimport { register as registerOpenRouterImages } from "@odinlabs-ai/pi-ai/openrouter-images";\nconsole.log(typeof registerAnthropic, typeof registerOpenAICompletions, typeof registerOpenRouterImages);\n`,
 			resolveDir: process.cwd(),
 			sourcefile: "pi-browser-selective-smoke-entry.ts",
 		},

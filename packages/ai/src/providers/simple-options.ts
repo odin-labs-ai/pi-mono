@@ -21,6 +21,10 @@ export function buildBaseOptions(_model: Model<Api>, options?: SimpleStreamOptio
 	};
 }
 
+export function resolveMaxTokens(model: Pick<Model<Api>, "maxTokens">, requested?: number): number {
+	return requested === undefined ? model.maxTokens : Math.min(requested, model.maxTokens);
+}
+
 export function clampReasoning(effort: ThinkingLevel | undefined): Exclude<ThinkingLevel, "xhigh"> | undefined {
 	return effort === "xhigh" ? "high" : effort;
 }

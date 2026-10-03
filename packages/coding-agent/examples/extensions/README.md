@@ -24,7 +24,6 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `confirm-destructive.ts` | Confirms before destructive session actions (clear, switch, fork) |
 | `dirty-repo-guard.ts` | Prevents session changes with uncommitted git changes |
 | `sandbox/` | OS-level sandboxing using `@anthropic-ai/sandbox-runtime` with per-project config |
-| `gondolin/` | Route built-in tools and `!` commands into a Gondolin micro-VM |
 
 ### Custom Tools
 
@@ -140,7 +139,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 See [docs/extensions.md](../../docs/extensions.md) for full documentation.
 
 ```typescript
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@odinlabs-ai/pi-coding-agent";
 import { Type } from "typebox";
 
 export default function (pi: ExtensionAPI) {
@@ -182,7 +181,7 @@ export default function (pi: ExtensionAPI) {
 
 **Use StringEnum for string parameters** (required for Google API compatibility):
 ```typescript
-import { StringEnum } from "@earendil-works/pi-ai";
+import { StringEnum } from "@odinlabs-ai/pi-ai";
 
 // Good
 action: StringEnum(["list", "add"] as const)

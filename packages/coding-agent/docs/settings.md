@@ -54,7 +54,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `quietStartup` | boolean | `false` | Hide startup header |
 | `defaultProjectTrust` | string | `"ask"` | Fallback project trust behavior: `"ask"`, `"always"`, or `"never"`. Global setting only |
 | `collapseChangelog` | boolean | `false` | Show condensed changelog after updates |
-| `enableInstallTelemetry` | boolean | `true` | Send an anonymous install/update version ping after first install or changelog-detected updates. This does not control update checks |
+| `enableProviderAttribution` | boolean | `true` | Add Odin Pi identification headers to requests sent to supported model providers. This does not control update checks |
 | `enableAnalytics` | boolean | `false` | Opt-in analytics data sharing. Currently only asked for during the experimental first-time setup (`PI_EXPERIMENTAL=1`) |
 | `trackingId` | string | - | Analytics tracking identifier, generated when `enableAnalytics` is turned on |
 | `doubleEscapeAction` | string | `"tree"` | Action for double-escape: `"tree"`, `"fork"`, or `"none"` |
@@ -63,11 +63,11 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `autocompleteMaxVisible` | number | `5` | Max visible items in autocomplete dropdown (3-20) |
 | `showHardwareCursor` | boolean | `false` | Show the terminal cursor while TUI positions it for IME support |
 
-### Telemetry and update checks
+### Provider attribution and update checks
 
-`enableInstallTelemetry` only controls the anonymous install/update ping to `https://pi.dev/api/report-install`. Opting out of telemetry does not disable update checks; Pi can still fetch `https://pi.dev/api/latest-version` to look for the latest version.
+Pi does not send install or update telemetry. `enableProviderAttribution` only controls Odin Pi identification headers on supported provider requests; it does not make a separate network request. Set `PI_PROVIDER_ATTRIBUTION=0` to disable those headers for one process. Existing `enableInstallTelemetry: false` and `PI_TELEMETRY=0` opt-outs remain honored as migration fallbacks; the new names take precedence. Unrecognized environment values fail closed and disable attribution.
 
-Set `PI_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--offline` or `PI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+The update check queries the Odin Pi repository's GitHub Releases API. Set `PI_SKIP_VERSION_CHECK=1` to disable it. Use `--offline` or `PI_OFFLINE=1` to disable startup update and package checks.
 
 ### Network
 

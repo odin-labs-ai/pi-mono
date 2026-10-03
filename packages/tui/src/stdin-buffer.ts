@@ -260,6 +260,10 @@ export type StdinBufferOptions = {
 	 * After this time, the buffer is flushed even if incomplete
 	 */
 	timeout?: number;
+	/** Maximum idle time between bracketed-paste chunks (default: 1000ms). */
+	pasteInactivityTimeout?: number;
+	/** Absolute bracketed-paste lifetime, even while chunks arrive (default: 5000ms). */
+	pasteAbsoluteTimeout?: number;
 };
 
 export type StdinBufferEventMap = {
@@ -277,11 +281,17 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 	private readonly timeoutMs: number;
 	private pasteMode: boolean = false;
 	private pasteBuffer: string = "";
+	private pasteWatchdog: ReturnType<typeof setTimeout> | null = null;
+	private pasteStartedAt: number = 0;
+	private readonly pasteInactivityTimeoutMs: number;
+	private readonly pasteAbsoluteTimeoutMs: number;
 	private pendingKittyPrintableCodepoint: number | undefined;
 
 	constructor(options: StdinBufferOptions = {}) {
 		super();
 		this.timeoutMs = options.timeout ?? 10;
+		this.pasteInactivityTimeoutMs = options.pasteInactivityTimeout ?? 1000;
+		this.pasteAbsoluteTimeoutMs = options.pasteAbsoluteTimeout ?? 5000;
 	}
 
 	public process(data: string | Buffer): void {
@@ -324,12 +334,15 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 				this.pasteMode = false;
 				this.pasteBuffer = "";
 				this.pendingKittyPrintableCodepoint = undefined;
+				this.disarmPasteWatchdog();
 
 				this.emit("paste", pastedContent);
 
 				if (remaining.length > 0) {
 					this.process(remaining);
 				}
+			} else {
+				this.armPasteWatchdog();
 			}
 			return;
 		}
@@ -347,6 +360,7 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 			this.pendingKittyPrintableCodepoint = undefined;
 			this.buffer = this.buffer.slice(startIndex + BRACKETED_PASTE_START.length);
 			this.pasteMode = true;
+			this.pasteStartedAt = Date.now();
 			this.pasteBuffer = this.buffer;
 			this.buffer = "";
 
@@ -358,12 +372,15 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 				this.pasteMode = false;
 				this.pasteBuffer = "";
 				this.pendingKittyPrintableCodepoint = undefined;
+				this.disarmPasteWatchdog();
 
 				this.emit("paste", pastedContent);
 
 				if (remaining.length > 0) {
 					this.process(remaining);
 				}
+			} else {
+				this.armPasteWatchdog();
 			}
 			return;
 		}
@@ -397,6 +414,40 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		this.emit("data", sequence);
 	}
 
+	private armPasteWatchdog(): void {
+		this.clearPasteWatchdogTimer();
+		if (!this.pasteMode) return;
+
+		const remainingAbsoluteMs = this.pasteAbsoluteTimeoutMs - (Date.now() - this.pasteStartedAt);
+		const waitMs = Math.max(0, Math.min(this.pasteInactivityTimeoutMs, remainingAbsoluteMs));
+		this.pasteWatchdog = setTimeout(() => {
+			this.pasteWatchdog = null;
+			if (!this.pasteMode) return;
+
+			const salvaged = this.pasteBuffer;
+			this.pasteMode = false;
+			this.pasteBuffer = "";
+			this.pasteStartedAt = 0;
+			this.pendingKittyPrintableCodepoint = undefined;
+			if (salvaged.length > 0) {
+				this.emit("paste", salvaged);
+			}
+		}, waitMs);
+		this.pasteWatchdog.unref?.();
+	}
+
+	private clearPasteWatchdogTimer(): void {
+		if (this.pasteWatchdog) {
+			clearTimeout(this.pasteWatchdog);
+			this.pasteWatchdog = null;
+		}
+	}
+
+	private disarmPasteWatchdog(): void {
+		this.clearPasteWatchdogTimer();
+		this.pasteStartedAt = 0;
+	}
+
 	flush(): string[] {
 		if (this.timeout) {
 			clearTimeout(this.timeout);
@@ -421,6 +472,7 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		this.buffer = "";
 		this.pasteMode = false;
 		this.pasteBuffer = "";
+		this.disarmPasteWatchdog();
 		this.pendingKittyPrintableCodepoint = undefined;
 	}
 

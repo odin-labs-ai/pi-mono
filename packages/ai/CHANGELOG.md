@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.79.10-odin.1] - 2026-10-03
+
+### Breaking Changes
+
+- Changed the package scope from `@earendil-works/pi-ai` to `@odinlabs-ai/pi-ai` for the Odin-maintained release line.
+- Raised the supported Node.js floor to 22.19.0.
+
+### Added
+
+- Added a bounded, configurable idle watchdog to every streaming provider transport, including raw SSE readers and Codex WebSocket streams.
+
+### Fixed
+
+- Fixed final tool-call argument handling to reject truncated JSON instead of silently executing repaired partial arguments.
+- Fixed provider payloads to carry the model's advertised output-token ceiling by default and clamp explicit requests to that ceiling.
+- Updated vulnerable runtime dependencies used by the published package and coding-agent shrinkwrap.
+- Made ordinary builds compile the committed model catalogs; refreshing catalogs from live provider APIs is now an explicit maintenance step.
+
 ## [0.79.10] - 2026-06-22
 
 ### Fixed
