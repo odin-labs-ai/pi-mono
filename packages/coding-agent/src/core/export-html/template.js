@@ -313,21 +313,8 @@
         return '';
       }
 
-      /**
-       * Parse a skill block from message text.
-       * Returns null if the text doesn't contain a skill block.
-       * Matches the format: <skill name="..." location="...">\n...\n</skill>\n\nuser message
-       */
-      function parseSkillBlock(text) {
-        const match = text.match(/^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/);
-        if (!match) return null;
-        return {
-          name: match[1],
-          location: match[2],
-          content: match[3],
-          userMessage: match[4]?.trim() || undefined,
-        };
-      }
+      // Generated from core/skill-block-parser.ts by export-html/index.ts.
+      const parseSkillBlock = /*__PI_SKILL_BLOCK_PARSER__*/ undefined;
 
       function getSearchableText(entry, label) {
         const parts = [];

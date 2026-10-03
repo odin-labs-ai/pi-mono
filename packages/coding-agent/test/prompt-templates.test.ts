@@ -25,9 +25,14 @@ import {
 // ============================================================================
 
 describe("substituteArgs", () => {
-	test("handles long malformed placeholder input linearly", () => {
-		const input = "${@:".repeat(20_000);
+	test("handles adversarial malformed placeholder input within a linear-time budget", () => {
+		const input = "${@:".repeat(80_000);
 		expect(substituteArgs(input, ["safe"])).toBe(input);
+	}, 1_000);
+
+	test("continues substituting after malformed brace placeholders", () => {
+		expect(substituteArgs("${bad $1", ["safe"])).toBe("${bad safe");
+		expect(substituteArgs(`\${@:bad} then $1`, ["safe"])).toBe(`\${@:bad} then safe`);
 	});
 
 	test("should replace $ARGUMENTS with all args joined", () => {

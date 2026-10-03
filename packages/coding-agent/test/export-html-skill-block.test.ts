@@ -1,8 +1,28 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
+import { injectSkillBlockParser } from "../src/core/export-html/index.ts";
+import { parseSkillBlock } from "../src/core/skill-block-parser.ts";
 
 describe("export HTML skill block rendering", () => {
 	const templateJs = readFileSync(new URL("../src/core/export-html/template.js", import.meta.url), "utf-8");
+	const generatedTemplateJs = injectSkillBlockParser(templateJs);
+
+	it("injects the exact canonical linear parser instead of a mirrored regex", () => {
+		expect(generatedTemplateJs).toContain(`(${parseSkillBlock.toString()})`);
+		expect(generatedTemplateJs).not.toContain("__PI_SKILL_BLOCK_PARSER__");
+		expect(templateJs).not.toContain("text.match(");
+	});
+
+	it("uses the shared parser contract for behavior and adversarial content", () => {
+		expect(parseSkillBlock('<skill name="demo" location="/tmp/demo">\nbody\n</skill>\n\ncontinue')).toEqual({
+			name: "demo",
+			location: "/tmp/demo",
+			content: "body",
+			userMessage: "continue",
+		});
+		const content = "<skill-like>".repeat(100_000);
+		expect(parseSkillBlock(`<skill name="demo" location="/tmp/demo">\n${content}\n</skill>`)?.content).toBe(content);
+	});
 
 	it("strips skill wrapper XML from user message rendering", () => {
 		// Skill commands store a structural wrapper in the raw user message:

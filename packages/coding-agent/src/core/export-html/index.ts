@@ -7,6 +7,7 @@ import { normalizePath, resolvePath } from "../../utils/paths.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
 import type { SessionEntry } from "../session-manager.ts";
 import { SessionManager } from "../session-manager.ts";
+import { parseSkillBlock } from "../skill-block-parser.ts";
 
 /**
  * Interface for rendering custom tools to HTML.
@@ -137,6 +138,17 @@ interface SessionData {
 	renderedTools?: Record<string, RenderedToolHtml>;
 }
 
+const SKILL_BLOCK_PARSER_MARKER = "/*__PI_SKILL_BLOCK_PARSER__*/ undefined";
+
+/** Inject the canonical parser into the standalone browser application. */
+export function injectSkillBlockParser(templateJs: string): string {
+	const occurrences = templateJs.split(SKILL_BLOCK_PARSER_MARKER).length - 1;
+	if (occurrences !== 1) {
+		throw new Error(`Expected exactly one skill-block parser marker, found ${occurrences}`);
+	}
+	return templateJs.replace(SKILL_BLOCK_PARSER_MARKER, `(${parseSkillBlock.toString()})`);
+}
+
 /**
  * Core HTML generation logic shared by both export functions.
  */
@@ -144,7 +156,7 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 	const templateDir = getExportTemplateDir();
 	const template = readFileSync(join(templateDir, "template.html"), "utf-8");
 	const templateCss = readFileSync(join(templateDir, "template.css"), "utf-8");
-	const templateJs = readFileSync(join(templateDir, "template.js"), "utf-8");
+	const templateJs = injectSkillBlockParser(readFileSync(join(templateDir, "template.js"), "utf-8"));
 	const markedJs = readFileSync(join(templateDir, "vendor", "marked.min.js"), "utf-8");
 	const hljsJs = readFileSync(join(templateDir, "vendor", "highlight.min.js"), "utf-8");
 

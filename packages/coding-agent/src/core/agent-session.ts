@@ -80,6 +80,7 @@ import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.t
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
+import { type ParsedSkillBlock, parseSkillBlock } from "./skill-block-parser.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
@@ -87,45 +88,7 @@ import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts"
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 
-// ============================================================================
-// Skill Block Parsing
-// ============================================================================
-
-/** Parsed skill block from a user message */
-export interface ParsedSkillBlock {
-	name: string;
-	location: string;
-	content: string;
-	userMessage: string | undefined;
-}
-
-/**
- * Parse a skill block from message text.
- * Returns null if the text doesn't contain a skill block.
- */
-export function parseSkillBlock(text: string): ParsedSkillBlock | null {
-	const prefix = '<skill name="';
-	const locationSeparator = '" location="';
-	const headerEnd = '">\n';
-	const closing = "\n</skill>";
-	if (!text.startsWith(prefix)) return null;
-	const nameEnd = text.indexOf(locationSeparator, prefix.length);
-	if (nameEnd <= prefix.length) return null;
-	const locationStart = nameEnd + locationSeparator.length;
-	const locationEnd = text.indexOf(headerEnd, locationStart);
-	if (locationEnd <= locationStart) return null;
-	const contentStart = locationEnd + headerEnd.length;
-	const closingStart = text.lastIndexOf(closing);
-	if (closingStart < contentStart) return null;
-	const remainder = text.slice(closingStart + closing.length);
-	if (remainder !== "" && (!remainder.startsWith("\n\n") || remainder.length === 2)) return null;
-	return {
-		name: text.slice(prefix.length, nameEnd),
-		location: text.slice(locationStart, locationEnd),
-		content: text.slice(contentStart, closingStart),
-		userMessage: remainder === "" ? undefined : remainder.slice(2).trim() || undefined,
-	};
-}
+export { parseSkillBlock, type ParsedSkillBlock };
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =

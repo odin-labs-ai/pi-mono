@@ -204,7 +204,9 @@ function normalizeAzureBaseUrl(baseUrl: string): string {
 		url.search = "";
 	}
 
-	return url.toString().replace(/\/+$/, "");
+	let normalizedUrl = url.toString();
+	while (normalizedUrl.endsWith("/")) normalizedUrl = normalizedUrl.slice(0, -1);
+	return normalizedUrl;
 }
 
 function buildDefaultBaseUrl(resourceName: string): string {

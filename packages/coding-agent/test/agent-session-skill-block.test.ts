@@ -14,6 +14,8 @@ describe("parseSkillBlock", () => {
 	it("rejects malformed or empty headers", () => {
 		expect(parseSkillBlock('<skill name="" location="/tmp/demo">\nbody\n</skill>')).toBeNull();
 		expect(parseSkillBlock('<skill name="demo" location="">\nbody\n</skill>')).toBeNull();
+		expect(parseSkillBlock('<skill name="de"mo" location="/tmp/demo">\nbody\n</skill>')).toBeNull();
+		expect(parseSkillBlock('<skill name="demo" location="/tmp/de"mo">\nbody\n</skill>')).toBeNull();
 		expect(parseSkillBlock('<skill name="demo" location="/tmp/demo">\nbody\n</skill>trailing')).toBeNull();
 	});
 

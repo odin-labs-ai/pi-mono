@@ -68,20 +68,31 @@ export function parseCommandArgs(argsString: string): string[] {
  */
 export function substituteArgs(content: string, args: string[]): string {
 	const allArgs = args.join(" ");
-	let result = "";
+	const result: string[] = [];
+	const nextClosingBrace = new Int32Array(content.length + 1);
+	nextClosingBrace[content.length] = -1;
+	let nearestClosingBrace = -1;
+	for (let index = content.length - 1; index >= 0; index -= 1) {
+		if (content.charCodeAt(index) === 125) nearestClosingBrace = index;
+		nextClosingBrace[index] = nearestClosingBrace;
+	}
+
 	let cursor = 0;
 	while (cursor < content.length) {
 		const dollar = content.indexOf("$", cursor);
-		if (dollar < 0) return result + content.slice(cursor);
-		result += content.slice(cursor, dollar);
+		if (dollar < 0) {
+			result.push(content.slice(cursor));
+			break;
+		}
+		result.push(content.slice(cursor, dollar));
 
 		if (content.startsWith("$ARGUMENTS", dollar)) {
-			result += allArgs;
+			result.push(allArgs);
 			cursor = dollar + "$ARGUMENTS".length;
 			continue;
 		}
 		if (content.startsWith("$@", dollar)) {
-			result += allArgs;
+			result.push(allArgs);
 			cursor = dollar + 2;
 			continue;
 		}
@@ -91,33 +102,62 @@ export function substituteArgs(content: string, args: string[]): string {
 			digitEnd += 1;
 		}
 		if (digitEnd > dollar + 1) {
-			result += args[Number(content.slice(dollar + 1, digitEnd)) - 1] ?? "";
+			result.push(args[Number(content.slice(dollar + 1, digitEnd)) - 1] ?? "");
 			cursor = digitEnd;
 			continue;
 		}
 
 		if (content.startsWith("${", dollar)) {
-			const close = content.indexOf("}", dollar + 2);
-			if (close >= 0) {
-				const expression = content.slice(dollar + 2, close);
-				const defaultSeparator = expression.indexOf(":-");
-				if (defaultSeparator > 0 && /^\d+$/.test(expression.slice(0, defaultSeparator))) {
-					const index = Number(expression.slice(0, defaultSeparator)) - 1;
-					result += args[index] || expression.slice(defaultSeparator + 2);
+			const close = nextClosingBrace[dollar + 2] ?? -1;
+			let expressionCursor = dollar + 2;
+			while (
+				expressionCursor < close &&
+				content.charCodeAt(expressionCursor) >= 48 &&
+				content.charCodeAt(expressionCursor) <= 57
+			) {
+				expressionCursor += 1;
+			}
+			if (
+				expressionCursor > dollar + 2 &&
+				expressionCursor + 1 < close &&
+				content.startsWith(":-", expressionCursor)
+			) {
+				const index = Number(content.slice(dollar + 2, expressionCursor)) - 1;
+				result.push(args[index] || content.slice(expressionCursor + 2, close));
+				cursor = close + 1;
+				continue;
+			}
+
+			if (content.startsWith("${@:", dollar)) {
+				expressionCursor = dollar + 4;
+				const startBegin = expressionCursor;
+				while (
+					expressionCursor < close &&
+					content.charCodeAt(expressionCursor) >= 48 &&
+					content.charCodeAt(expressionCursor) <= 57
+				) {
+					expressionCursor += 1;
+				}
+				const hasStart = expressionCursor > startBegin;
+				const start = hasStart ? Math.max(0, Number(content.slice(startBegin, expressionCursor)) - 1) : 0;
+				if (hasStart && expressionCursor === close) {
+					result.push(args.slice(start).join(" "));
 					cursor = close + 1;
 					continue;
 				}
-				if (expression.startsWith("@:")) {
-					const [startText, lengthText, ...extra] = expression.slice(2).split(":");
-					if (
-						extra.length === 0 &&
-						/^\d+$/.test(startText ?? "") &&
-						(lengthText === undefined || /^\d+$/.test(lengthText))
+				if (hasStart && content.charCodeAt(expressionCursor) === 58) {
+					expressionCursor += 1;
+					const lengthBegin = expressionCursor;
+					while (
+						expressionCursor < close &&
+						content.charCodeAt(expressionCursor) >= 48 &&
+						content.charCodeAt(expressionCursor) <= 57
 					) {
-						const start = Math.max(0, Number(startText) - 1);
-						const selected =
-							lengthText === undefined ? args.slice(start) : args.slice(start, start + Number(lengthText));
-						result += selected.join(" ");
+						expressionCursor += 1;
+					}
+					if (expressionCursor > lengthBegin && expressionCursor === close) {
+						const length = Number(content.slice(lengthBegin, expressionCursor));
+						result.push(args.slice(start, start + length).join(" "));
 						cursor = close + 1;
 						continue;
 					}
@@ -125,10 +165,10 @@ export function substituteArgs(content: string, args: string[]): string {
 			}
 		}
 
-		result += "$";
+		result.push("$");
 		cursor = dollar + 1;
 	}
-	return result;
+	return result.join("");
 }
 
 function loadTemplateFromFile(filePath: string, sourceInfo: SourceInfo): PromptTemplate | null {
