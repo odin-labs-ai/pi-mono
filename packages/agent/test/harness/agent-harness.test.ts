@@ -454,6 +454,40 @@ describe("AgentHarness", () => {
 		});
 	});
 
+	it("does not let a later tool_call hook undo an earlier block", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([
+			() =>
+				fauxAssistantMessage(fauxToolCall("calculate", { expression: "2 + 2" }, { id: "call-blocked" }), {
+					stopReason: "toolUse",
+				}),
+		]);
+		const session = new Session(new InMemorySessionStorage());
+		const harness = new AgentHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session,
+			model: registration.getModel(),
+			tools: [calculateTool],
+		});
+		harness.on("tool_call", () => ({ block: true, reason: "policy denied" }));
+		harness.on("tool_call", () => ({ block: false, reason: "later allowed" }));
+
+		await harness.prompt("hello");
+
+		const toolResult = (await session.getEntries()).find(
+			(entry) => entry.type === "message" && entry.message.role === "toolResult",
+		);
+		expect(toolResult).toMatchObject({
+			type: "message",
+			message: {
+				role: "toolResult",
+				content: [{ type: "text", text: "policy denied" }],
+				isError: true,
+			},
+		});
+	});
+
 	it("preserves app tool types for getters and update events", async () => {
 		const session = new Session(new InMemorySessionStorage());
 		const env = new NodeExecutionEnv({ cwd: process.cwd() });

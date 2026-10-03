@@ -32,7 +32,7 @@ const SETUP_LOGO_LINES = ["██████", "██  ██", "████ 
 export class FirstTimeSetupComponent extends Container {
 	private step: "theme" | "analytics" = "theme";
 	private themeIndex: number;
-	private analyticsIndex = 0;
+	private analyticsIndex = 1;
 	private readonly options: FirstTimeSetupOptions;
 
 	constructor(options: FirstTimeSetupOptions) {
@@ -124,11 +124,11 @@ export class FirstTimeSetupComponent extends Container {
 
 	handleInput(keyData: string): void {
 		const kb = getKeybindings();
-		if (kb.matches(keyData, "tui.select.up") || keyData === "k") {
+		if (kb.matches(keyData, "tui.select.up")) {
 			this.moveSelection(-1);
-		} else if (kb.matches(keyData, "tui.select.down") || keyData === "j") {
+		} else if (kb.matches(keyData, "tui.select.down")) {
 			this.moveSelection(1);
-		} else if (kb.matches(keyData, "tui.select.confirm") || keyData === "\n") {
+		} else if (kb.matches(keyData, "tui.select.confirm")) {
 			if (this.step === "theme") {
 				this.step = "analytics";
 				this.update();

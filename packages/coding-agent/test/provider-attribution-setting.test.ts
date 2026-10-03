@@ -31,6 +31,12 @@ describe("provider attribution setting", () => {
 		expect(settingsManager.getEnableProviderAttribution()).toBe(false);
 	});
 
+	it("defaults attribution to disabled", () => {
+		const settingsManager = createSettingsManager();
+
+		expect(settingsManager.getEnableProviderAttribution()).toBe(false);
+	});
+
 	it("prefers the new setting over the legacy privacy fallback", () => {
 		const settingsManager = createSettingsManager({ enableInstallTelemetry: false, enableProviderAttribution: true });
 

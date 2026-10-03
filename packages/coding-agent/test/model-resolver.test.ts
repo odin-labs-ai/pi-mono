@@ -357,7 +357,7 @@ describe("resolveCliModel", () => {
 		expect(result.model?.id).toBe("glm-5");
 	});
 
-	test("prefers an authenticated exact raw model id over an unauthenticated inferred provider", () => {
+	test("keeps an explicit provider instead of silently rerouting to an authenticated provider", () => {
 		const commandcodeModel: Model<"anthropic-messages"> = {
 			id: "xiaomi/mimo-v2.5-pro",
 			name: "Xiaomi MiMo via Commandcode",
@@ -393,8 +393,8 @@ describe("resolveCliModel", () => {
 		});
 
 		expect(result.error).toBeUndefined();
-		expect(result.model?.provider).toBe("commandcode");
-		expect(result.model?.id).toBe("xiaomi/mimo-v2.5-pro");
+		expect(result.model?.provider).toBe("xiaomi");
+		expect(result.model?.id).toBe("mimo-v2.5-pro");
 	});
 
 	test("resolves provider-prefixed fuzzy patterns (openrouter/qwen -> openrouter model)", () => {

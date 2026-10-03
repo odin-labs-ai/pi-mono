@@ -288,7 +288,7 @@ export class SettingsManager {
 		globalLoadError: Error | null = null,
 		projectLoadError: Error | null = null,
 		initialErrors: SettingsError[] = [],
-		projectTrusted = true,
+		projectTrusted = false,
 	) {
 		this.storage = storage;
 		this.globalSettings = initialGlobal;
@@ -312,7 +312,7 @@ export class SettingsManager {
 
 	/** Create a SettingsManager from an arbitrary storage backend */
 	static fromStorage(storage: SettingsStorage, options: SettingsManagerCreateOptions = {}): SettingsManager {
-		const projectTrusted = options.projectTrusted ?? true;
+		const projectTrusted = options.projectTrusted ?? false;
 		const globalLoad = SettingsManager.tryLoadFromStorage(storage, "global");
 		const projectLoad = SettingsManager.tryLoadFromStorage(storage, "project", projectTrusted);
 		const initialErrors: SettingsError[] = [];
@@ -342,7 +342,7 @@ export class SettingsManager {
 		return SettingsManager.fromStorage(storage);
 	}
 
-	private static loadFromStorage(storage: SettingsStorage, scope: SettingsScope, projectTrusted = true): Settings {
+	private static loadFromStorage(storage: SettingsStorage, scope: SettingsScope, projectTrusted = false): Settings {
 		if (scope === "project" && !projectTrusted) {
 			return {};
 		}
@@ -363,7 +363,7 @@ export class SettingsManager {
 	private static tryLoadFromStorage(
 		storage: SettingsStorage,
 		scope: SettingsScope,
-		projectTrusted = true,
+		projectTrusted = false,
 	): { settings: Settings; error: Error | null } {
 		try {
 			return { settings: SettingsManager.loadFromStorage(storage, scope, projectTrusted), error: null };
@@ -910,7 +910,7 @@ export class SettingsManager {
 	}
 
 	getEnableProviderAttribution(): boolean {
-		return this.settings.enableProviderAttribution ?? this.settings.enableInstallTelemetry ?? true;
+		return this.globalSettings.enableProviderAttribution ?? this.globalSettings.enableInstallTelemetry ?? false;
 	}
 
 	setEnableProviderAttribution(enabled: boolean): void {
@@ -920,19 +920,22 @@ export class SettingsManager {
 	}
 
 	getEnableAnalytics(): boolean {
-		return this.settings.enableAnalytics ?? false;
+		return this.globalSettings.enableAnalytics ?? false;
 	}
 
 	getTrackingId(): string | undefined {
-		return this.settings.trackingId;
+		return this.globalSettings.trackingId;
 	}
 
-	/** Set the analytics opt-in preference; generates a tracking identifier on first opt-in */
+	/** Set the analytics opt-in preference; creates an identifier while enabled and deletes it on opt-out. */
 	setEnableAnalytics(enabled: boolean): void {
 		this.globalSettings.enableAnalytics = enabled;
 		this.markModified("enableAnalytics");
 		if (enabled && !this.globalSettings.trackingId) {
 			this.globalSettings.trackingId = randomUUID();
+			this.markModified("trackingId");
+		} else if (!enabled && this.globalSettings.trackingId) {
+			delete this.globalSettings.trackingId;
 			this.markModified("trackingId");
 		}
 		this.save();

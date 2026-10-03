@@ -208,7 +208,19 @@ export async function emitProjectTrustEvent(
 
 		for (const handler of handlers) {
 			try {
-				const handlerResult = (await handler(event, ctx)) as ProjectTrustEventResult;
+				const candidate = await handler(event, ctx);
+				if (typeof candidate !== "object" || candidate === null || !("trusted" in candidate)) {
+					throw new Error("project_trust handler must return a trust decision");
+				}
+				const trusted = (candidate as { trusted?: unknown }).trusted;
+				if (trusted !== "yes" && trusted !== "no" && trusted !== "undecided") {
+					throw new Error('project_trust handler trusted must be "yes", "no", or "undecided"');
+				}
+				const remember = (candidate as { remember?: unknown }).remember;
+				if (remember !== undefined && typeof remember !== "boolean") {
+					throw new Error("project_trust handler remember must be boolean when provided");
+				}
+				const handlerResult: ProjectTrustEventResult = remember === undefined ? { trusted } : { trusted, remember };
 				if (handlerResult.trusted === "undecided") {
 					continue;
 				}
@@ -270,7 +282,7 @@ export class ExtensionRunner {
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
 	private isIdleFn: () => boolean = () => true;
-	private isProjectTrustedFn: () => boolean = () => true;
+	private isProjectTrustedFn: () => boolean = () => false;
 	private getSignalFn: () => AbortSignal | undefined = () => undefined;
 	private waitForIdleFn: () => Promise<void> = async () => {};
 	private abortFn: () => void = () => {};

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
+import { SettingsManager } from "../../../src/core/settings-manager.ts";
 
 describe("issue #2781 skill collision precedence: user skills should override package skills", () => {
 	let tempDir: string;
@@ -58,12 +59,17 @@ describe("issue #2781 skill collision precedence: user skills should override pa
 		writeFileSync(join(settingsDir, "settings.json"), JSON.stringify({ packages: [pkgDir] }, null, 2));
 	}
 
+	function createTrustedLoader(): DefaultResourceLoader {
+		const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: true });
+		return new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+	}
+
 	it("user auto-discovered skill should override package skill with same name", async () => {
 		const pkgDir = createPackageWithSkill("web-fetch", "Package web-fetch skill");
 		const userSkillPath = createUserSkill("web-fetch", "User web-fetch override");
 		createSettingsWithPackage(pkgDir, "user");
 
-		const loader = new DefaultResourceLoader({ cwd, agentDir });
+		const loader = createTrustedLoader();
 		await loader.reload();
 
 		const { skills } = loader.getSkills();
@@ -78,7 +84,7 @@ describe("issue #2781 skill collision precedence: user skills should override pa
 		const projectSkillPath = createProjectSkill("web-fetch", "Project web-fetch override");
 		createSettingsWithPackage(pkgDir, "user");
 
-		const loader = new DefaultResourceLoader({ cwd, agentDir });
+		const loader = createTrustedLoader();
 		await loader.reload();
 
 		const { skills } = loader.getSkills();
@@ -94,7 +100,7 @@ describe("issue #2781 skill collision precedence: user skills should override pa
 		const projectSkillPath = createProjectSkill("web-fetch", "Project web-fetch override");
 		createSettingsWithPackage(pkgDir, "user");
 
-		const loader = new DefaultResourceLoader({ cwd, agentDir });
+		const loader = createTrustedLoader();
 		await loader.reload();
 
 		const { skills } = loader.getSkills();
@@ -109,7 +115,7 @@ describe("issue #2781 skill collision precedence: user skills should override pa
 		createUserSkill("web-fetch", "User web-fetch override");
 		createSettingsWithPackage(pkgDir, "user");
 
-		const loader = new DefaultResourceLoader({ cwd, agentDir });
+		const loader = createTrustedLoader();
 		await loader.reload();
 
 		const { diagnostics } = loader.getSkills();

@@ -1,8 +1,12 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../src/core/trust-manager.ts";
+import {
+	getProjectTrustOptions,
+	hasTrustRequiringProjectResources,
+	ProjectTrustStore,
+} from "../src/core/trust-manager.ts";
 
 describe("ProjectTrustStore", () => {
 	let tempDir: string;
@@ -34,6 +38,20 @@ describe("ProjectTrustStore", () => {
 		expect(store.get(childDir)).toBe(false);
 		store.set(childDir, null);
 		expect(store.get(childDir)).toBe(true);
+	});
+
+	it("orders deny choices before trust choices", () => {
+		const options = getProjectTrustOptions(cwd, { includeSessionOnly: true });
+
+		expect(options.map((option) => option.trusted)).toEqual([false, false, true, true, true]);
+	});
+
+	it("writes the trust store with owner-only permissions", () => {
+		const store = new ProjectTrustStore(agentDir);
+
+		store.set(cwd, true);
+
+		expect(statSync(join(agentDir, "trust.json")).mode & 0o777).toBe(0o600);
 	});
 
 	it("detects trust-requiring project resources", () => {

@@ -82,14 +82,16 @@ describe("analytics settings", () => {
 		expect(manager.getTrackingId()).toBeUndefined();
 	});
 
-	it("keeps the tracking identifier when toggling analytics", () => {
+	it("deletes the tracking identifier on opt-out and rotates it on a later opt-in", () => {
 		const manager = SettingsManager.inMemory();
 
 		manager.setEnableAnalytics(true);
 		const trackingId = manager.getTrackingId();
 		manager.setEnableAnalytics(false);
+		expect(manager.getTrackingId()).toBeUndefined();
 		manager.setEnableAnalytics(true);
 
-		expect(manager.getTrackingId()).toBe(trackingId);
+		expect(manager.getTrackingId()).not.toBe(trackingId);
+		expect(manager.getTrackingId()).toMatch(/^[0-9a-f-]{36}$/);
 	});
 });

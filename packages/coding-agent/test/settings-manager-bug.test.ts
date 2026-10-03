@@ -109,7 +109,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 			}),
 		);
 
-		const manager = SettingsManager.create(projectDir, agentDir);
+		const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 
 		const currentProjectSettings = JSON.parse(readFileSync(projectSettingsPath, "utf-8"));
 		currentProjectSettings.prompts = ["./new-prompt.md"];
@@ -132,7 +132,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 			}),
 		);
 
-		const manager = SettingsManager.create(projectDir, agentDir);
+		const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 
 		const currentProjectSettings = JSON.parse(readFileSync(projectSettingsPath, "utf-8"));
 		currentProjectSettings.extensions = ["./external-extension.ts"];

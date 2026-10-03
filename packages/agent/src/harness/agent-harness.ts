@@ -138,6 +138,44 @@ function applyStreamOptionsPatch(
 	return result;
 }
 
+function mergeHookResults<TType extends keyof AgentHarnessEventResultMap>(
+	type: TType,
+	current: AgentHarnessEventResultMap[TType] | undefined,
+	next: AgentHarnessEventResultMap[TType] | undefined,
+): AgentHarnessEventResultMap[TType] | undefined {
+	if (current === undefined) return next;
+	if (next === undefined) return current;
+
+	const currentRecord = current as Record<string, unknown>;
+	const nextRecord = next as Record<string, unknown>;
+	const merged: Record<string, unknown> = { ...currentRecord, ...nextRecord };
+
+	// Denials and terminal error states are monotonic. A later hook may enrich
+	// the result, but it can never undo an earlier security decision.
+	if (type === "tool_call") {
+		merged.block = currentRecord.block === true || nextRecord.block === true;
+		if (currentRecord.block === true && typeof currentRecord.reason === "string") {
+			merged.reason = currentRecord.reason;
+		}
+	}
+	if (type === "session_before_compact" || type === "session_before_tree") {
+		merged.cancel = currentRecord.cancel === true || nextRecord.cancel === true;
+	}
+	if (type === "tool_result") {
+		merged.isError = currentRecord.isError === true || nextRecord.isError === true;
+		merged.terminate = currentRecord.terminate === true || nextRecord.terminate === true;
+	}
+	if (type === "before_agent_start") {
+		const currentMessages = Array.isArray(currentRecord.messages) ? currentRecord.messages : [];
+		const nextMessages = Array.isArray(nextRecord.messages) ? nextRecord.messages : [];
+		if (currentMessages.length > 0 || nextMessages.length > 0) {
+			merged.messages = [...currentMessages, ...nextMessages];
+		}
+	}
+
+	return merged as unknown as AgentHarnessEventResultMap[TType];
+}
+
 const SUBSCRIBER_EVENT_TYPE = "*";
 
 type AgentHarnessHandler = (event: any, signal?: AbortSignal) => Promise<any> | any;
@@ -251,18 +289,16 @@ export class AgentHarness<
 	): Promise<AgentHarnessEventResultMap[TType] | undefined> {
 		const handlers = this.getHandlers(event.type as TType);
 		if (!handlers || handlers.size === 0) return undefined;
-		let lastResult: AgentHarnessEventResultMap[TType] | undefined;
+		let combinedResult: AgentHarnessEventResultMap[TType] | undefined;
 		for (const handler of handlers) {
 			try {
 				const result = await handler(event);
-				if (result !== undefined) {
-					lastResult = result;
-				}
+				combinedResult = mergeHookResults(event.type, combinedResult, result);
 			} catch (error) {
 				throw normalizeHookError(error);
 			}
 		}
-		return lastResult;
+		return combinedResult;
 	}
 
 	private async emitBeforeProviderRequest(

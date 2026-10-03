@@ -223,7 +223,7 @@ describe("SettingsManager", () => {
 			writeFileSync(globalSettingsPath, "{ invalid global json");
 			writeFileSync(projectSettingsPath, "{ invalid project json");
 
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 			const errors = manager.drainErrors();
 
 			expect(errors).toHaveLength(2);
@@ -233,6 +233,12 @@ describe("SettingsManager", () => {
 	});
 
 	describe("project trust", () => {
+		it("should default to untrusted", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.isProjectTrusted()).toBe(false);
+		});
+
 		it("should skip project settings when project is not trusted", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "global" }));
 			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ theme: "project" }));
@@ -273,7 +279,7 @@ describe("SettingsManager", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }));
 			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ defaultProjectTrust: "never" }));
 
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 
 			expect(manager.getDefaultProjectTrust()).toBe("always");
 		});
@@ -284,6 +290,18 @@ describe("SettingsManager", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
 			expect(manager.getDefaultProjectTrust()).toBe("ask");
+		});
+
+		it("should not let project settings opt in to analytics or attribution", () => {
+			writeFileSync(
+				join(projectDir, ".pi", "settings.json"),
+				JSON.stringify({ enableAnalytics: true, trackingId: "project-id", enableProviderAttribution: true }),
+			);
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
+
+			expect(manager.getEnableAnalytics()).toBe(false);
+			expect(manager.getTrackingId()).toBeUndefined();
+			expect(manager.getEnableProviderAttribution()).toBe(false);
 		});
 	});
 
@@ -297,7 +315,7 @@ describe("SettingsManager", () => {
 			rmSync(join(projectDir, ".pi"), { recursive: true });
 
 			// Create SettingsManager (reads both global and project settings)
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 
 			// .pi folder should NOT have been created just from reading
 			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
@@ -314,7 +332,7 @@ describe("SettingsManager", () => {
 			// Delete the .pi folder that beforeEach created
 			rmSync(join(projectDir, ".pi"), { recursive: true });
 
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 
 			// .pi folder should NOT exist yet
 			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
@@ -341,7 +359,7 @@ describe("SettingsManager", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ httpIdleTimeoutMs: 300000 }));
 			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ httpIdleTimeoutMs: 0 }));
 
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 
 			expect(manager.getHttpIdleTimeoutMs()).toBe(0);
 		});
@@ -403,7 +421,7 @@ describe("SettingsManager", () => {
 		it("should return project sessionDir, overriding global", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ sessionDir: "/global/sessions" }));
 			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ sessionDir: "./sessions" }));
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 			expect(manager.getSessionDir()).toBe("./sessions");
 		});
 

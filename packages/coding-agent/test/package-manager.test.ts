@@ -7,6 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
+function createTrustedSettings(settings: Parameters<typeof SettingsManager.inMemory>[0] = {}): SettingsManager {
+	const manager = SettingsManager.inMemory(settings);
+	manager.setProjectTrusted(true);
+	return manager;
+}
+
 function normalizeForMatch(value: string): string {
 	return value.replace(/\\/g, "/");
 }
@@ -81,7 +87,7 @@ describe("DefaultPackageManager", () => {
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
 
-		settingsManager = SettingsManager.inMemory();
+		settingsManager = createTrustedSettings();
 		packageManager = new DefaultPackageManager({
 			cwd: tempDir,
 			agentDir,
@@ -467,7 +473,7 @@ Content`,
 			try {
 				const cwd = join(tempDir, "scratch", "nested");
 				const localAgentDir = join(tempDir, ".pi", "agent");
-				const localSettingsManager = SettingsManager.inMemory();
+				const localSettingsManager = createTrustedSettings();
 				mkdirSync(cwd, { recursive: true });
 				mkdirSync(localAgentDir, { recursive: true });
 
@@ -692,7 +698,7 @@ Content`,
 
 	describe("npmCommand", () => {
 		it("should use npmCommand argv for npm installs", async () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
 			});
 			packageManager = new DefaultPackageManager({
@@ -723,7 +729,7 @@ Content`,
 		});
 
 		it("should use bun --cwd for npm package installs", async () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["mise", "exec", "bun@1", "--", "bun"],
 			});
 			packageManager = new DefaultPackageManager({
@@ -822,7 +828,7 @@ Content`,
 		});
 
 		it("should use plain install for git package dependencies when npmCommand is configured", async () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["pnpm"],
 			});
 			packageManager = new DefaultPackageManager({
@@ -876,7 +882,7 @@ Content`,
 		});
 
 		it("should use plain install through npmCommand argv when updating git package dependencies", async () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["mise", "exec", "node@20", "--", "pnpm"],
 			});
 			packageManager = new DefaultPackageManager({
@@ -914,7 +920,7 @@ Content`,
 		});
 
 		it("should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes", () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
 			});
 			packageManager = new DefaultPackageManager({
@@ -953,7 +959,7 @@ Content`,
 		});
 
 		it("should install user npm packages into the pi-managed npm root", async () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["pnpm"],
 				packages: ["npm:pnpm-pkg"],
 			});
@@ -1000,7 +1006,7 @@ Content`,
 		});
 
 		it("should load legacy pnpm global package paths from pnpm list output", async () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["pnpm"],
 				packages: ["npm:pnpm-pkg"],
 			});
@@ -1043,7 +1049,7 @@ Content`,
 		});
 
 		it("should resolve wrapped pnpm global package paths from pnpm list output", () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["mise", "exec", "node@20", "--", "pnpm"],
 			});
 			packageManager = new DefaultPackageManager({
@@ -1069,7 +1075,7 @@ Content`,
 		});
 
 		it("should ignore malformed legacy pnpm global package lists", () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["pnpm"],
 			});
 			packageManager = new DefaultPackageManager({
@@ -2400,7 +2406,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 		});
 
 		it("should use npmCommand argv for npm update checks", async () => {
-			settingsManager = SettingsManager.inMemory({
+			settingsManager = createTrustedSettings({
 				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
 			});
 			packageManager = new DefaultPackageManager({

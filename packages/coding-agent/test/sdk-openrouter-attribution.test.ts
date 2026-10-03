@@ -90,8 +90,8 @@ describe("createAgentSession provider attribution headers", () => {
 		} = {},
 	): Promise<Record<string, string> | undefined> {
 		const settingsManager = SettingsManager.create(cwd, agentDir);
-		if (options.attributionEnabled === false) {
-			settingsManager.setEnableProviderAttribution(false);
+		if (options.attributionEnabled !== undefined) {
+			settingsManager.setEnableProviderAttribution(options.attributionEnabled);
 		}
 
 		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
@@ -147,7 +147,9 @@ describe("createAgentSession provider attribution headers", () => {
 	}
 
 	it("adds default attribution headers for OpenRouter models", async () => {
-		const headers = await captureHeaders(createModel("openrouter", "https://openrouter.ai/api/v1"));
+		const headers = await captureHeaders(createModel("openrouter", "https://openrouter.ai/api/v1"), {
+			attributionEnabled: true,
+		});
 
 		expect(headers?.["HTTP-Referer"]).toBe("https://github.com/odin-labs-ai/pi-mono");
 		expect(headers?.["X-OpenRouter-Title"]).toBe("Odin Pi");
@@ -165,7 +167,9 @@ describe("createAgentSession provider attribution headers", () => {
 	});
 
 	it("adds attribution headers for custom providers routed through OpenRouter", async () => {
-		const headers = await captureHeaders(createModel("custom-openrouter", "https://openrouter.ai/api/v1"));
+		const headers = await captureHeaders(createModel("custom-openrouter", "https://openrouter.ai/api/v1"), {
+			attributionEnabled: true,
+		});
 
 		expect(headers?.["HTTP-Referer"]).toBe("https://github.com/odin-labs-ai/pi-mono");
 		expect(headers?.["X-OpenRouter-Title"]).toBe("Odin Pi");
@@ -184,6 +188,7 @@ describe("createAgentSession provider attribution headers", () => {
 
 	it("lets provider and request headers override the defaults", async () => {
 		const headers = await captureHeaders(createModel("openrouter", "https://openrouter.ai/api/v1"), {
+			attributionEnabled: true,
 			providerHeaders: {
 				"HTTP-Referer": "https://provider.example",
 				"X-OpenRouter-Categories": "provider-category",
@@ -199,20 +204,26 @@ describe("createAgentSession provider attribution headers", () => {
 	});
 
 	it("adds default attribution headers for Vercel AI Gateway models", async () => {
-		const headers = await captureHeaders(createModel("vercel-ai-gateway", "https://ai-gateway.vercel.sh/v1"));
+		const headers = await captureHeaders(createModel("vercel-ai-gateway", "https://ai-gateway.vercel.sh/v1"), {
+			attributionEnabled: true,
+		});
 
 		expect(headers?.["http-referer"]).toBe("https://github.com/odin-labs-ai/pi-mono");
 		expect(headers?.["x-title"]).toBe("Odin Pi");
 	});
 
 	it("adds default attribution headers for direct NVIDIA NIM endpoints", async () => {
-		const headers = await captureHeaders(createModel("custom-nim", "https://integrate.api.nvidia.com/v1"));
+		const headers = await captureHeaders(createModel("custom-nim", "https://integrate.api.nvidia.com/v1"), {
+			attributionEnabled: true,
+		});
 
 		expect(headers?.["X-BILLING-INVOKE-ORIGIN"]).toBe("Pi");
 	});
 
 	it("adds default attribution headers for the NVIDIA provider", async () => {
-		const headers = await captureHeaders(createModel("nvidia", "https://example.test/v1"));
+		const headers = await captureHeaders(createModel("nvidia", "https://example.test/v1"), {
+			attributionEnabled: true,
+		});
 
 		expect(headers?.["X-BILLING-INVOKE-ORIGIN"]).toBe("Pi");
 	});
@@ -227,6 +238,7 @@ describe("createAgentSession provider attribution headers", () => {
 
 	it("lets provider and request headers override NVIDIA NIM defaults", async () => {
 		const headers = await captureHeaders(createModel("nvidia", "https://integrate.api.nvidia.com/v1"), {
+			attributionEnabled: true,
 			providerHeaders: {
 				"X-BILLING-INVOKE-ORIGIN": "Provider",
 			},
@@ -241,6 +253,7 @@ describe("createAgentSession provider attribution headers", () => {
 	it("does not add NVIDIA NIM attribution headers for NVIDIA models routed through OpenRouter", async () => {
 		const headers = await captureHeaders(
 			createModel("openrouter", "https://openrouter.ai/api/v1", "nvidia/nemotron-3-super-120b-a12b"),
+			{ attributionEnabled: true },
 		);
 
 		expect(headers?.["HTTP-Referer"]).toBe("https://github.com/odin-labs-ai/pi-mono");
@@ -257,6 +270,7 @@ describe("createAgentSession provider attribution headers", () => {
 
 	it("adds OpenCode session headers", async () => {
 		const headers = await captureHeaders(createModel("opencode", "https://opencode.ai/zen/v1"), {
+			attributionEnabled: true,
 			sessionId: "opencode-session",
 		});
 
@@ -266,6 +280,7 @@ describe("createAgentSession provider attribution headers", () => {
 
 	it("lets configured OpenCode headers override the defaults", async () => {
 		const headers = await captureHeaders(createModel("opencode", "https://opencode.ai/zen/v1"), {
+			attributionEnabled: true,
 			sessionId: "opencode-session",
 			providerHeaders: {
 				"x-opencode-session": "configured-session",
@@ -275,5 +290,15 @@ describe("createAgentSession provider attribution headers", () => {
 
 		expect(headers?.["x-opencode-session"]).toBe("configured-session");
 		expect(headers?.["x-opencode-client"]).toBe("configured-client");
+	});
+
+	it("does not add OpenCode session headers when attribution is disabled", async () => {
+		const headers = await captureHeaders(createModel("opencode", "https://opencode.ai/zen/v1"), {
+			attributionEnabled: false,
+			sessionId: "opencode-session",
+		});
+
+		expect(headers?.["x-opencode-session"]).toBeUndefined();
+		expect(headers?.["x-opencode-client"]).toBeUndefined();
 	});
 });

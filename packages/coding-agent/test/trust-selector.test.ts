@@ -31,7 +31,7 @@ describe("TrustSelectorComponent", () => {
 		expect(output).not.toContain("Do not trust ✓");
 	});
 
-	it("selects a trust decision", () => {
+	it("defaults to a persistent denial", () => {
 		const onSelect = vi.fn();
 		const selector = new TrustSelectorComponent({
 			cwd: "/project",
@@ -41,8 +41,27 @@ describe("TrustSelectorComponent", () => {
 			onCancel: () => {},
 		});
 
-		selector.handleInput("\n");
+		selector.handleInput("\r");
 
+		expect(onSelect).toHaveBeenCalledWith({ trusted: false, updates: [{ path: "/project", decision: false }] });
+	});
+
+	it("requires a second confirmation before granting trust", () => {
+		const onSelect = vi.fn();
+		const selector = new TrustSelectorComponent({
+			cwd: "/project",
+			savedDecision: null,
+			projectTrusted: false,
+			onSelect,
+			onCancel: () => {},
+		});
+
+		selector.handleInput("\x1b[B");
+		selector.handleInput("\r");
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(stripAnsi(selector.render(120).join("\n"))).toContain("Trust (confirm again)");
+
+		selector.handleInput("\r");
 		expect(onSelect).toHaveBeenCalledWith({ trusted: true, updates: [{ path: "/project", decision: true }] });
 	});
 
@@ -74,7 +93,9 @@ describe("TrustSelectorComponent", () => {
 		expect(output).toContain("Saved decision: trusted (inherited from /parent)");
 		expect(output).toContain("Trust parent folder (/parent) ✓");
 
-		selector.handleInput("\n");
+		selector.handleInput("\r");
+		expect(onSelect).not.toHaveBeenCalled();
+		selector.handleInput("\r");
 
 		expect(onSelect).toHaveBeenCalledWith({
 			trusted: true,
@@ -83,5 +104,33 @@ describe("TrustSelectorComponent", () => {
 				{ path: "/parent/project", decision: null },
 			],
 		});
+	});
+
+	it("honors configured keys without accepting raw newline or vim fallbacks", () => {
+		setKeybindings(
+			new KeybindingsManager({
+				"tui.select.up": "ctrl+p",
+				"tui.select.down": "ctrl+n",
+				"tui.select.confirm": "ctrl+x",
+			}),
+		);
+		const onSelect = vi.fn();
+		const selector = new TrustSelectorComponent({
+			cwd: "/project",
+			savedDecision: null,
+			projectTrusted: false,
+			onSelect,
+			onCancel: () => {},
+		});
+
+		selector.handleInput("j");
+		selector.handleInput("k");
+		selector.handleInput("\n");
+		expect(onSelect).not.toHaveBeenCalled();
+
+		selector.handleInput("\x0e");
+		selector.handleInput("\x18");
+		selector.handleInput("\x18");
+		expect(onSelect).toHaveBeenCalledWith({ trusted: true, updates: [{ path: "/project", decision: true }] });
 	});
 });

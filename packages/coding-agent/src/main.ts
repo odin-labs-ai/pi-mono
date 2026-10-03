@@ -538,7 +538,10 @@ export async function main(args: string[], options?: MainOptions) {
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(cwd);
 	time("runMigrations");
 
-	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
+	// Session discovery happens before project trust is resolved. It must only
+	// consume global settings; a repository may not redirect session reads or
+	// writes through its project settings before consent.
+	const startupSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
 	reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
 
 	// Experimental first-time setup: theme choice and analytics opt-in.

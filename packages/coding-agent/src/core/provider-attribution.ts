@@ -78,7 +78,12 @@ function getDefaultAttributionHeaders(
 	return undefined;
 }
 
-function getSessionHeaders(model: Model<Api>, sessionId: string | undefined): Record<string, string> | undefined {
+function getSessionHeaders(
+	model: Model<Api>,
+	sessionId: string | undefined,
+	attributionEnabled: boolean,
+): Record<string, string> | undefined {
+	if (!attributionEnabled) return undefined;
 	if (!sessionId) return undefined;
 	if (
 		model.provider !== "opencode" &&
@@ -96,8 +101,9 @@ export function mergeProviderAttributionHeaders(
 	sessionId: string | undefined,
 	...headerSources: Array<Record<string, string> | undefined>
 ): Record<string, string> | undefined {
+	const attributionEnabled = isProviderAttributionEnabled(settingsManager);
 	const merged = {
-		...getSessionHeaders(model, sessionId),
+		...getSessionHeaders(model, sessionId, attributionEnabled),
 		...getDefaultAttributionHeaders(model, settingsManager),
 	};
 

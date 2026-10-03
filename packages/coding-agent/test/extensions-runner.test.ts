@@ -123,6 +123,44 @@ describe("ExtensionRunner", () => {
 			expect(result.result).toEqual({ trusted: "no", remember: true });
 			expect(result.errors).toEqual([]);
 		});
+
+		it("rejects malformed trust decisions and continues to a valid handler", async () => {
+			const malformedPath = path.join(extensionsDir, "malformed.ts");
+			const decidedPath = path.join(extensionsDir, "decided.ts");
+			fs.writeFileSync(
+				malformedPath,
+				`export default function(pi) {
+	pi.on("project_trust", () => ({ trusted: true, remember: "yes" }));
+}`,
+			);
+			fs.writeFileSync(
+				decidedPath,
+				`export default function(pi) {
+	pi.on("project_trust", () => ({ trusted: "no" }));
+}`,
+			);
+
+			const extensionsResult = await loadExtensions([malformedPath, decidedPath], tempDir);
+			const result = await emitProjectTrustEvent(
+				extensionsResult,
+				{ type: "project_trust", cwd: tempDir },
+				{
+					cwd: tempDir,
+					mode: "tui",
+					hasUI: false,
+					ui: {
+						select: async () => undefined,
+						confirm: async () => false,
+						input: async () => undefined,
+						notify: () => {},
+					},
+				},
+			);
+
+			expect(result.result).toEqual({ trusted: "no" });
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toContain('trusted must be "yes", "no", or "undecided"');
+		});
 	});
 
 	describe("shortcut conflicts", () => {

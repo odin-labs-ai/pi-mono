@@ -36,16 +36,15 @@ export class TrustSelectorComponent extends Container {
 	private readonly savedDecision: ProjectTrustStoreEntry | null;
 	private readonly onSelectCallback: (selection: TrustSelection) => void;
 	private readonly onCancelCallback: () => void;
+	private confirmationArmed = false;
 
 	constructor(options: TrustSelectorOptions) {
 		super();
 
 		this.savedDecision = options.savedDecision;
 		this.trustOptions = getProjectTrustOptions(options.cwd);
-		this.selectedIndex = Math.max(
-			0,
-			this.trustOptions.findIndex((option) => this.isSavedOption(option)),
-		);
+		const savedIndex = this.trustOptions.findIndex((option) => this.isSavedOption(option));
+		this.selectedIndex = savedIndex >= 0 ? savedIndex : 0;
 		this.onSelectCallback = options.onSelect;
 		this.onCancelCallback = options.onCancel;
 
@@ -55,14 +54,7 @@ export class TrustSelectorComponent extends Container {
 		this.addChild(new Text(theme.fg("muted", options.cwd), 1, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(
-			new Text(
-				theme.fg(
-					"muted",
-					`Saved decision: ${formatDecision(this.trustOptions[0]?.savedPath, options.savedDecision)}`,
-				),
-				1,
-				0,
-			),
+			new Text(theme.fg("muted", `Saved decision: ${formatDecision(options.cwd, options.savedDecision)}`), 1, 0),
 		);
 		this.addChild(
 			new Text(theme.fg("muted", `Current session: ${options.projectTrusted ? "trusted" : "untrusted"}`), 1, 0),
@@ -109,22 +101,31 @@ export class TrustSelectorComponent extends Container {
 			const isCurrent = this.isSavedOption(option);
 			const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
 			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const label = isSelected ? theme.fg("accent", option.label) : theme.fg("text", option.label);
+			const confirmation = isSelected && option.trusted && this.confirmationArmed ? " (confirm again)" : "";
+			const labelText = `${option.label}${confirmation}`;
+			const label = isSelected ? theme.fg("accent", labelText) : theme.fg("text", labelText);
 			this.listContainer.addChild(new Text(`${prefix}${label}${checkmark}`, 1, 0));
 		}
 	}
 
 	handleInput(keyData: string): void {
 		const kb = getKeybindings();
-		if (kb.matches(keyData, "tui.select.up") || keyData === "k") {
+		if (kb.matches(keyData, "tui.select.up")) {
+			this.confirmationArmed = false;
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 			this.updateList();
-		} else if (kb.matches(keyData, "tui.select.down") || keyData === "j") {
+		} else if (kb.matches(keyData, "tui.select.down")) {
+			this.confirmationArmed = false;
 			this.selectedIndex = Math.min(this.trustOptions.length - 1, this.selectedIndex + 1);
 			this.updateList();
-		} else if (kb.matches(keyData, "tui.select.confirm") || keyData === "\n") {
+		} else if (kb.matches(keyData, "tui.select.confirm")) {
 			const selected = this.trustOptions[this.selectedIndex];
 			if (selected) {
+				if (selected.trusted && !this.confirmationArmed) {
+					this.confirmationArmed = true;
+					this.updateList();
+					return;
+				}
 				this.onSelectCallback({ trusted: selected.trusted, updates: selected.updates });
 			}
 		} else if (kb.matches(keyData, "tui.select.cancel")) {

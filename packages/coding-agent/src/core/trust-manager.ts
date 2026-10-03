@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
@@ -64,9 +65,25 @@ export function getProjectTrustParentPath(cwd: string): string | undefined {
 
 export function getProjectTrustOptions(cwd: string, options?: { includeSessionOnly?: boolean }): ProjectTrustOption[] {
 	const trustPath = normalizeCwd(cwd);
-	const trustOptions: ProjectTrustOption[] = [
-		{ label: "Trust", trusted: true, updates: [{ path: trustPath, decision: true }], savedPath: trustPath },
-	];
+	const trustOptions: ProjectTrustOption[] = [];
+	if (options?.includeSessionOnly) {
+		trustOptions.push({ label: "Do not trust (this session only)", trusted: false, updates: [] });
+	}
+	trustOptions.push({
+		label: "Do not trust",
+		trusted: false,
+		updates: [{ path: trustPath, decision: false }],
+		savedPath: trustPath,
+	});
+	if (options?.includeSessionOnly) {
+		trustOptions.push({ label: "Trust (this session only)", trusted: true, updates: [] });
+	}
+	trustOptions.push({
+		label: "Trust",
+		trusted: true,
+		updates: [{ path: trustPath, decision: true }],
+		savedPath: trustPath,
+	});
 	const parentPath = getProjectTrustParentPath(cwd);
 	if (parentPath !== undefined) {
 		trustOptions.push({
@@ -78,18 +95,6 @@ export function getProjectTrustOptions(cwd: string, options?: { includeSessionOn
 			],
 			savedPath: parentPath,
 		});
-	}
-	if (options?.includeSessionOnly) {
-		trustOptions.push({ label: "Trust (this session only)", trusted: true, updates: [] });
-	}
-	trustOptions.push({
-		label: "Do not trust",
-		trusted: false,
-		updates: [{ path: trustPath, decision: false }],
-		savedPath: trustPath,
-	});
-	if (options?.includeSessionOnly) {
-		trustOptions.push({ label: "Do not trust (this session only)", trusted: false, updates: [] });
 	}
 	return trustOptions;
 }
@@ -130,7 +135,17 @@ function writeTrustFile(path: string, data: TrustFile): void {
 		}
 	}
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(sorted, null, 2)}\n`, "utf-8");
+	const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+	try {
+		writeFileSync(tempPath, `${JSON.stringify(sorted, null, 2)}\n`, {
+			encoding: "utf-8",
+			flag: "wx",
+			mode: 0o600,
+		});
+		renameSync(tempPath, path);
+	} finally {
+		rmSync(tempPath, { force: true });
+	}
 }
 
 function acquireTrustLockSync(path: string): () => void {
