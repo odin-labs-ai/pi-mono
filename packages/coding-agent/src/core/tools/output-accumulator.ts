@@ -53,6 +53,7 @@ export class OutputAccumulator {
 
 	private tempFilePath: string | undefined;
 	private tempFileStream: WriteStream | undefined;
+	private tempFileError: Error | undefined;
 
 	constructor(options: OutputAccumulatorOptions = {}) {
 		this.maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
@@ -120,11 +121,16 @@ export class OutputAccumulator {
 
 	async closeTempFile(): Promise<void> {
 		if (!this.tempFileStream) {
+			if (this.tempFileError) throw this.tempFileError;
 			return;
 		}
 
 		const stream = this.tempFileStream;
 		this.tempFileStream = undefined;
+		if (this.tempFileError) {
+			stream.destroy();
+			throw this.tempFileError;
+		}
 
 		await new Promise<void>((resolve, reject) => {
 			const onError = (error: Error) => {
@@ -139,6 +145,7 @@ export class OutputAccumulator {
 			stream.once("finish", onFinish);
 			stream.end();
 		});
+		if (this.tempFileError) throw this.tempFileError;
 	}
 
 	getLastLineBytes(): number {
@@ -213,7 +220,10 @@ export class OutputAccumulator {
 			return;
 		}
 		this.tempFilePath = defaultTempFilePath(this.tempFilePrefix);
-		this.tempFileStream = createWriteStream(this.tempFilePath);
+		this.tempFileStream = createWriteStream(this.tempFilePath, { flags: "wx", mode: 0o600 });
+		this.tempFileStream.on("error", (error) => {
+			this.tempFileError = error;
+		});
 		for (const chunk of this.rawChunks) {
 			this.tempFileStream.write(chunk);
 		}
