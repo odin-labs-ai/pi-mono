@@ -28,6 +28,8 @@ import {
 	toError,
 } from "../types.ts";
 
+const DEFAULT_MAX_EXEC_OUTPUT_BYTES = 16 * 1024 * 1024;
+
 function resolvePath(cwd: string, path: string): string {
 	return isAbsolute(path) ? path : resolve(cwd, path);
 }
@@ -254,6 +256,7 @@ export class NodeExecutionEnv implements ExecutionEnv {
 			cwd?: string;
 			env?: Record<string, string>;
 			timeout?: number;
+			maxOutputBytes?: number;
 			abortSignal?: AbortSignal;
 			onStdout?: (chunk: string) => void;
 			onStderr?: (chunk: string) => void;
@@ -262,6 +265,10 @@ export class NodeExecutionEnv implements ExecutionEnv {
 		if (options?.abortSignal?.aborted) return err(new ExecutionError("aborted", "aborted"));
 
 		const cwd = options?.cwd ? resolvePath(this.cwd, options.cwd) : this.cwd;
+		const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_EXEC_OUTPUT_BYTES;
+		if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1) {
+			return err(new ExecutionError("output_limit", "maxOutputBytes must be a positive safe integer"));
+		}
 		const shellConfig = await getShellConfig(this.shellPath);
 		if (!shellConfig.ok) return shellConfig;
 
@@ -271,6 +278,8 @@ export class NodeExecutionEnv implements ExecutionEnv {
 			let settled = false;
 			let timedOut = false;
 			let callbackError: ExecutionError | undefined;
+			let outputLimitError: ExecutionError | undefined;
+			let outputBytes = 0;
 			let child: ReturnType<typeof spawn> | undefined;
 			let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -332,6 +341,12 @@ export class NodeExecutionEnv implements ExecutionEnv {
 			child.stdout?.setEncoding("utf8");
 			child.stderr?.setEncoding("utf8");
 			child.stdout?.on("data", (chunk: string) => {
+				outputBytes += Buffer.byteLength(chunk, "utf8");
+				if (outputBytes > maxOutputBytes) {
+					outputLimitError ??= new ExecutionError("output_limit", `output exceeded ${maxOutputBytes} bytes`);
+					onAbort();
+					return;
+				}
 				stdout += chunk;
 				try {
 					options?.onStdout?.(chunk);
@@ -342,6 +357,12 @@ export class NodeExecutionEnv implements ExecutionEnv {
 				}
 			});
 			child.stderr?.on("data", (chunk: string) => {
+				outputBytes += Buffer.byteLength(chunk, "utf8");
+				if (outputBytes > maxOutputBytes) {
+					outputLimitError ??= new ExecutionError("output_limit", `output exceeded ${maxOutputBytes} bytes`);
+					onAbort();
+					return;
+				}
 				stderr += chunk;
 				try {
 					options?.onStderr?.(chunk);
@@ -357,6 +378,10 @@ export class NodeExecutionEnv implements ExecutionEnv {
 			});
 
 			child.on("close", (code) => {
+				if (outputLimitError) {
+					settle(err(outputLimitError));
+					return;
+				}
 				if (callbackError) {
 					settle(err(callbackError));
 					return;

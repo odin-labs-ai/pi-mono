@@ -137,6 +137,7 @@ export class FileError extends Error {
 export type ExecutionErrorCode =
 	| "aborted"
 	| "timeout"
+	| "output_limit"
 	| "shell_unavailable"
 	| "spawn_error"
 	| "callback_error"
@@ -248,6 +249,8 @@ export interface ExecutionEnvExecOptions {
 	env?: Record<string, string>;
 	/** Timeout in seconds. Implementations should return a timeout error when the command exceeds this duration. Defaults to no timeout. */
 	timeout?: number;
+	/** Maximum combined stdout and stderr bytes retained in memory. Defaults to 16 MiB. */
+	maxOutputBytes?: number;
 	/** Abort signal used to terminate the command. Defaults to no abort signal. */
 	abortSignal?: AbortSignal;
 	/** Called with stdout chunks as they are produced. */

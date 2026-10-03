@@ -269,6 +269,14 @@ describe("NodeExecutionEnv", () => {
 		if (!result.ok) expect(result.error).toMatchObject({ code: "timeout" });
 	});
 
+	it("terminates commands whose combined output exceeds the configured limit", async () => {
+		const root = createTempDir();
+		const env = new NodeExecutionEnv({ cwd: root });
+		const result = await env.exec("printf '%0100d' 0", { maxOutputBytes: 64 });
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error).toMatchObject({ code: "output_limit" });
+	});
+
 	it("returns callback errors from exec stream handlers", async () => {
 		const root = createTempDir();
 		const env = new NodeExecutionEnv({ cwd: root });
