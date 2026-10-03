@@ -1,5 +1,5 @@
-import { MODELS } from "./models.generated.js";
-import type { Api, KnownProvider, Model, Usage } from "./types.js";
+import { MODELS } from "./models.generated.ts";
+import type { Api, KnownProvider, Model, ModelThinkingLevel, Usage } from "./types.ts";
 
 const modelRegistry: Map<string, Map<string, Model<Api>>> = new Map();
 
@@ -37,36 +37,49 @@ export function getModels<TProvider extends KnownProvider>(
 }
 
 export function calculateCost<TApi extends Api>(model: Model<TApi>, usage: Usage): Usage["cost"] {
+	// Anthropic charges 2x base input for 1h cache writes.
+	const longWrite = usage.cacheWrite1h ?? 0;
+	const shortWrite = usage.cacheWrite - longWrite;
 	usage.cost.input = (model.cost.input / 1000000) * usage.input;
 	usage.cost.output = (model.cost.output / 1000000) * usage.output;
 	usage.cost.cacheRead = (model.cost.cacheRead / 1000000) * usage.cacheRead;
-	usage.cost.cacheWrite = (model.cost.cacheWrite / 1000000) * usage.cacheWrite;
+	usage.cost.cacheWrite = (model.cost.cacheWrite * shortWrite + model.cost.input * 2 * longWrite) / 1000000;
 	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
 	return usage.cost;
 }
 
-/**
- * Check if a model supports xhigh thinking level.
- *
- * Supported today:
- * - GPT-5.2 / GPT-5.3 / GPT-5.4 model families
- * - Opus 4.6+ models (xhigh maps to adaptive effort "max" on Anthropic-compatible providers)
- */
-export function supportsXhigh<TApi extends Api>(model: Model<TApi>): boolean {
-	if (model.id.includes("gpt-5.2") || model.id.includes("gpt-5.3") || model.id.includes("gpt-5.4")) {
-		return true;
-	}
+const EXTENDED_THINKING_LEVELS: ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
-	if (
-		model.id.includes("opus-4-6") ||
-		model.id.includes("opus-4.6") ||
-		model.id.includes("opus-4-7") ||
-		model.id.includes("opus-4.7")
-	) {
-		return true;
-	}
+export function getSupportedThinkingLevels<TApi extends Api>(model: Model<TApi>): ModelThinkingLevel[] {
+	if (!model.reasoning) return ["off"];
 
-	return false;
+	return EXTENDED_THINKING_LEVELS.filter((level) => {
+		const mapped = model.thinkingLevelMap?.[level];
+		if (mapped === null) return false;
+		if (level === "xhigh") return mapped !== undefined;
+		return true;
+	});
+}
+
+export function clampThinkingLevel<TApi extends Api>(
+	model: Model<TApi>,
+	level: ModelThinkingLevel,
+): ModelThinkingLevel {
+	const availableLevels = getSupportedThinkingLevels(model);
+	if (availableLevels.includes(level)) return level;
+
+	const requestedIndex = EXTENDED_THINKING_LEVELS.indexOf(level);
+	if (requestedIndex === -1) return availableLevels[0] ?? "off";
+
+	for (let i = requestedIndex; i < EXTENDED_THINKING_LEVELS.length; i++) {
+		const candidate = EXTENDED_THINKING_LEVELS[i];
+		if (availableLevels.includes(candidate)) return candidate;
+	}
+	for (let i = requestedIndex - 1; i >= 0; i--) {
+		const candidate = EXTENDED_THINKING_LEVELS[i];
+		if (availableLevels.includes(candidate)) return candidate;
+	}
+	return availableLevels[0] ?? "off";
 }
 
 /**

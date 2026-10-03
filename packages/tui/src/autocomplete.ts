@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
-import { fuzzyFilter } from "./fuzzy.js";
+import { fuzzyFilter } from "./fuzzy.ts";
 
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
 
@@ -14,14 +14,18 @@ function escapeRegex(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function buildFdPathQuery(query: string): string {
+export function buildFdPathQuery(query: string): string {
 	const normalized = toDisplayPath(query);
 	if (!normalized.includes("/")) {
 		return normalized;
 	}
 
 	const hasTrailingSeparator = normalized.endsWith("/");
-	const trimmed = normalized.replace(/^\/+|\/+$/g, "");
+	let start = 0;
+	while (start < normalized.length && normalized.charCodeAt(start) === 47) start += 1;
+	let end = normalized.length;
+	while (end > start && normalized.charCodeAt(end - 1) === 47) end -= 1;
+	const trimmed = normalized.slice(start, end);
 	if (!trimmed) {
 		return normalized;
 	}
@@ -137,7 +141,7 @@ async function walkDirectoryWithFd(
 		"f",
 		"--type",
 		"d",
-		"--full-path",
+		"--follow",
 		"--hidden",
 		"--exclude",
 		".git",
@@ -146,6 +150,10 @@ async function walkDirectoryWithFd(
 		"--exclude",
 		".git/**",
 	];
+
+	if (toDisplayPath(query).includes("/")) {
+		args.push("--full-path");
+	}
 
 	if (query) {
 		args.push(buildFdPathQuery(query));
@@ -235,6 +243,9 @@ export interface AutocompleteSuggestions {
 }
 
 export interface AutocompleteProvider {
+	/** Characters that should naturally trigger this provider at token boundaries. */
+	triggerCharacters?: string[];
+
 	// Get autocomplete suggestions for current text/cursor position
 	// Returns null if no suggestions available
 	getSuggestions(
@@ -257,6 +268,9 @@ export interface AutocompleteProvider {
 		cursorLine: number;
 		cursorCol: number;
 	};
+
+	// Check if file completion should trigger for explicit Tab completion
+	shouldTriggerFileCompletion?(lines: string[], cursorLine: number, cursorCol: number): boolean;
 }
 
 // Combined provider that handles both slash commands and file paths
@@ -265,11 +279,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private basePath: string;
 	private fdPath: string | null;
 
-	constructor(
-		commands: (SlashCommand | AutocompleteItem)[] = [],
-		basePath: string = process.cwd(),
-		fdPath: string | null = null,
-	) {
+	constructor(commands: (SlashCommand | AutocompleteItem)[] = [], basePath: string, fdPath: string | null = null) {
 		this.commands = commands;
 		this.basePath = basePath;
 		this.fdPath = fdPath;

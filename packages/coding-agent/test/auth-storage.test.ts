@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerOAuthProvider } from "@mariozechner/pi-ai/oauth";
+import { registerOAuthProvider } from "@odinlabs-ai/pi-ai/oauth";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { clearConfigValueCache } from "../src/core/resolve-config-value.js";
+import { AuthStorage } from "../src/core/auth-storage.ts";
+import { clearConfigValueCache, resolveConfigValueUncached } from "../src/core/resolve-config-value.ts";
+import * as shellModule from "../src/utils/shell.ts";
 
 describe("AuthStorage", () => {
 	let tempDir: string;
@@ -31,7 +32,13 @@ describe("AuthStorage", () => {
 	}
 
 	function toShPath(value: string): string {
-		return value.replace(/\\/g, "/").replace(/"/g, '\\"');
+		const normalized = value.split("\\").join("/");
+		for (const char of normalized) {
+			const code = char.charCodeAt(0);
+			const isAlphaNumeric = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+			if (!isAlphaNumeric && !"/_.:-".includes(char)) throw new Error(`Unsafe test path: ${value}`);
+		}
+		return normalized;
 	}
 
 	describe("API key resolution", () => {
@@ -112,13 +119,13 @@ describe("AuthStorage", () => {
 			expect(apiKey).toBeUndefined();
 		});
 
-		test("apiKey as environment variable name resolves to env value", async () => {
+		test("apiKey with $ prefix resolves to env value", async () => {
 			const originalEnv = process.env.TEST_AUTH_API_KEY_12345;
 			process.env.TEST_AUTH_API_KEY_12345 = "env-api-key-value";
 
 			try {
 				writeAuthJson({
-					anthropic: { type: "api_key", key: "TEST_AUTH_API_KEY_12345" },
+					anthropic: { type: "api_key", key: "$TEST_AUTH_API_KEY_12345" },
 				});
 
 				authStorage = AuthStorage.create(authJsonPath);
@@ -130,6 +137,168 @@ describe("AuthStorage", () => {
 					delete process.env.TEST_AUTH_API_KEY_12345;
 				} else {
 					process.env.TEST_AUTH_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("apiKey env bag takes precedence over process.env", async () => {
+			const originalEnv = process.env.TEST_AUTH_SCOPED_API_KEY_12345;
+			process.env.TEST_AUTH_SCOPED_API_KEY_12345 = "process-env-value";
+
+			try {
+				writeAuthJson({
+					anthropic: {
+						type: "api_key",
+						key: "$TEST_AUTH_SCOPED_API_KEY_12345",
+						env: { TEST_AUTH_SCOPED_API_KEY_12345: "credential-env-value" },
+					},
+				});
+
+				authStorage = AuthStorage.create(authJsonPath);
+
+				expect(await authStorage.getApiKey("anthropic")).toBe("credential-env-value");
+				expect(authStorage.getProviderEnv("anthropic")).toEqual({
+					TEST_AUTH_SCOPED_API_KEY_12345: "credential-env-value",
+				});
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_AUTH_SCOPED_API_KEY_12345;
+				} else {
+					process.env.TEST_AUTH_SCOPED_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("apiKey with braced env syntax resolves to env value", async () => {
+			const originalEnv = process.env.TEST_AUTH_BRACED_API_KEY_12345;
+			process.env.TEST_AUTH_BRACED_API_KEY_12345 = "braced-env-api-key-value";
+			const bracedKey = "$" + "{TEST_AUTH_BRACED_API_KEY_12345}";
+
+			try {
+				writeAuthJson({
+					anthropic: { type: "api_key", key: bracedKey },
+				});
+
+				authStorage = AuthStorage.create(authJsonPath);
+				const apiKey = await authStorage.getApiKey("anthropic");
+
+				expect(apiKey).toBe("braced-env-api-key-value");
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_AUTH_BRACED_API_KEY_12345;
+				} else {
+					process.env.TEST_AUTH_BRACED_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("apiKey interpolates braced env references inside literals", async () => {
+			const originalPartA = process.env.TEST_AUTH_INTERPOLATED_PART_A_12345;
+			const originalPartB = process.env.TEST_AUTH_INTERPOLATED_PART_B_12345;
+			process.env.TEST_AUTH_INTERPOLATED_PART_A_12345 = "left";
+			process.env.TEST_AUTH_INTERPOLATED_PART_B_12345 = "right";
+			const interpolatedKey = [
+				"$",
+				"{TEST_AUTH_INTERPOLATED_PART_A_12345}_$",
+				"{TEST_AUTH_INTERPOLATED_PART_B_12345}",
+			].join("");
+
+			try {
+				writeAuthJson({
+					anthropic: { type: "api_key", key: interpolatedKey },
+				});
+
+				authStorage = AuthStorage.create(authJsonPath);
+				const apiKey = await authStorage.getApiKey("anthropic");
+
+				expect(apiKey).toBe("left_right");
+			} finally {
+				if (originalPartA === undefined) {
+					delete process.env.TEST_AUTH_INTERPOLATED_PART_A_12345;
+				} else {
+					process.env.TEST_AUTH_INTERPOLATED_PART_A_12345 = originalPartA;
+				}
+				if (originalPartB === undefined) {
+					delete process.env.TEST_AUTH_INTERPOLATED_PART_B_12345;
+				} else {
+					process.env.TEST_AUTH_INTERPOLATED_PART_B_12345 = originalPartB;
+				}
+			}
+		});
+
+		test("apiKey with $$ prefix escapes a leading dollar", async () => {
+			writeAuthJson({
+				anthropic: { type: "api_key", key: "$$TEST_AUTH_API_KEY_12345" },
+			});
+
+			authStorage = AuthStorage.create(authJsonPath);
+			const apiKey = await authStorage.getApiKey("anthropic");
+
+			expect(apiKey).toBe("$TEST_AUTH_API_KEY_12345");
+		});
+
+		test("apiKey with $! escapes a literal bang and still interpolates later env refs", async () => {
+			const originalEnv = process.env.TEST_AUTH_API_KEY_12345;
+			process.env.TEST_AUTH_API_KEY_12345 = "env-api-key-value";
+
+			try {
+				writeAuthJson({
+					anthropic: { type: "api_key", key: "$!literal-$TEST_AUTH_API_KEY_12345" },
+				});
+
+				authStorage = AuthStorage.create(authJsonPath);
+				const apiKey = await authStorage.getApiKey("anthropic");
+
+				expect(apiKey).toBe("!literal-env-api-key-value");
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_AUTH_API_KEY_12345;
+				} else {
+					process.env.TEST_AUTH_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("plain API key is used directly even when it matches an env var", async () => {
+			const originalEnv = process.env.TEST_AUTH_API_KEY_12345;
+			process.env.TEST_AUTH_API_KEY_12345 = "env-api-key-value";
+
+			try {
+				writeAuthJson({
+					anthropic: { type: "api_key", key: "TEST_AUTH_API_KEY_12345" },
+				});
+
+				authStorage = AuthStorage.create(authJsonPath);
+				const apiKey = await authStorage.getApiKey("anthropic");
+
+				expect(apiKey).toBe("TEST_AUTH_API_KEY_12345");
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_AUTH_API_KEY_12345;
+				} else {
+					process.env.TEST_AUTH_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("literal public API key is not corrupted by the Windows PUBLIC env var", async () => {
+			const originalPublic = process.env.PUBLIC;
+			process.env.PUBLIC = "C:\\Users\\Public";
+
+			try {
+				writeAuthJson({
+					opencode: { type: "api_key", key: "public" },
+				});
+
+				authStorage = AuthStorage.create(authJsonPath);
+				const apiKey = await authStorage.getApiKey("opencode");
+
+				expect(apiKey).toBe("public");
+			} finally {
+				if (originalPublic === undefined) {
+					delete process.env.PUBLIC;
+				} else {
+					process.env.PUBLIC = originalPublic;
 				}
 			}
 		});
@@ -157,6 +326,30 @@ describe("AuthStorage", () => {
 			const apiKey = await authStorage.getApiKey("anthropic");
 
 			expect(apiKey).toBe("hello-world");
+		});
+
+		test("command config uses stdin when configured shell requires it", () => {
+			if (process.platform === "win32") return;
+			const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+			vi.spyOn(shellModule, "getShellConfig").mockReturnValue({
+				shell: "/bin/bash",
+				args: ["-s"],
+				commandTransport: "stdin",
+			});
+
+			try {
+				Object.defineProperty(process, "platform", {
+					configurable: true,
+					value: "win32",
+				});
+				const nameExpansion = "$" + "{name}";
+
+				expect(resolveConfigValueUncached(`!name='World'; echo "Hello, ${nameExpansion}!"`)).toBe("Hello, World!");
+			} finally {
+				if (platformDescriptor) {
+					Object.defineProperty(process, "platform", platformDescriptor);
+				}
+			}
 		});
 
 		describe("caching", () => {
@@ -274,7 +467,7 @@ describe("AuthStorage", () => {
 					process.env[envVarName] = "first-value";
 
 					writeAuthJson({
-						anthropic: { type: "api_key", key: envVarName },
+						anthropic: { type: "api_key", key: `$${envVarName}` },
 					});
 
 					authStorage = AuthStorage.create(authJsonPath);
@@ -428,6 +621,26 @@ describe("AuthStorage", () => {
 
 			const secondDrain = authStorage.drainErrors();
 			expect(secondDrain).toHaveLength(0);
+		});
+	});
+
+	describe("auth status", () => {
+		test("does not expose stored API keys or OAuth tokens", () => {
+			authStorage = AuthStorage.inMemory({
+				anthropic: { type: "api_key", key: "secret-api-key" },
+				openai: {
+					type: "oauth",
+					access: "secret-access-token",
+					refresh: "secret-refresh-token",
+					expires: Date.now() + 1000,
+				},
+			});
+
+			expect(authStorage.getAuthStatus("anthropic")).toEqual({ configured: true, source: "stored" });
+			expect(authStorage.getAuthStatus("openai")).toEqual({ configured: true, source: "stored" });
+			expect(JSON.stringify(authStorage.getAuthStatus("anthropic"))).not.toContain("secret-api-key");
+			expect(JSON.stringify(authStorage.getAuthStatus("openai"))).not.toContain("secret-access-token");
+			expect(JSON.stringify(authStorage.getAuthStatus("openai"))).not.toContain("secret-refresh-token");
 		});
 	});
 

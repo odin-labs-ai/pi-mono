@@ -2,8 +2,8 @@
 
 import { createInterface } from "node:readline";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { getOAuthProvider, getOAuthProviders } from "./utils/oauth/index.js";
-import type { OAuthCredentials, OAuthProviderId } from "./utils/oauth/types.js";
+import { getOAuthProvider, getOAuthProviders } from "./utils/oauth/index.ts";
+import type { OAuthCredentials, OAuthProviderId } from "./utils/oauth/types.ts";
 
 const AUTH_FILE = "auth.json";
 const PROVIDERS = getOAuthProviders();
@@ -42,8 +42,22 @@ async function login(providerId: OAuthProviderId): Promise<void> {
 				if (info.instructions) console.log(info.instructions);
 				console.log();
 			},
+			onDeviceCode: (info) => {
+				console.log(`\nOpen this URL in your browser:\n${info.verificationUri}`);
+				console.log(`Enter code: ${info.userCode}`);
+				console.log();
+			},
 			onPrompt: async (p) => {
 				return await promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
+			},
+			onSelect: async (p) => {
+				console.log(`\n${p.message}`);
+				for (let i = 0; i < p.options.length; i++) {
+					console.log(`  ${i + 1}. ${p.options[i].label}`);
+				}
+				const choice = await promptFn(`Enter number (1-${p.options.length}):`);
+				const index = parseInt(choice, 10) - 1;
+				return p.options[index]?.id;
 			},
 			onProgress: (msg) => console.log(msg),
 		});
@@ -64,7 +78,7 @@ async function main(): Promise<void> {
 
 	if (!command || command === "help" || command === "--help" || command === "-h") {
 		const providerList = PROVIDERS.map((p) => `  ${p.id.padEnd(20)} ${p.name}`).join("\n");
-		console.log(`Usage: npx @mariozechner/pi-ai <command> [provider]
+		console.log(`Usage: npx @odinlabs-ai/pi-ai <command> [provider]
 
 Commands:
   login [provider]  Login to an OAuth provider
@@ -74,9 +88,9 @@ Providers:
 ${providerList}
 
 Examples:
-  npx @mariozechner/pi-ai login              # interactive provider selection
-  npx @mariozechner/pi-ai login anthropic    # login to specific provider
-  npx @mariozechner/pi-ai list               # list providers
+  npx @odinlabs-ai/pi-ai login              # interactive provider selection
+  npx @odinlabs-ai/pi-ai login anthropic    # login to specific provider
+  npx @odinlabs-ai/pi-ai list               # list providers
 `);
 		return;
 	}
@@ -113,7 +127,7 @@ Examples:
 
 		if (!PROVIDERS.some((p) => p.id === provider)) {
 			console.error(`Unknown provider: ${provider}`);
-			console.error(`Use 'npx @mariozechner/pi-ai list' to see available providers`);
+			console.error(`Use 'npx @odinlabs-ai/pi-ai list' to see available providers`);
 			process.exit(1);
 		}
 
@@ -123,7 +137,7 @@ Examples:
 	}
 
 	console.error(`Unknown command: ${command}`);
-	console.error(`Use 'npx @mariozechner/pi-ai --help' for usage`);
+	console.error(`Use 'npx @odinlabs-ai/pi-ai --help' for usage`);
 	process.exit(1);
 }
 

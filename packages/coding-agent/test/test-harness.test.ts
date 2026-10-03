@@ -3,11 +3,11 @@
  * Validates that the faux provider and session factory work correctly.
  */
 
-import type { AgentTool } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { Type } from "@sinclair/typebox";
+import type { AgentTool } from "@odinlabs-ai/pi-agent-core";
+import type { AssistantMessage } from "@odinlabs-ai/pi-ai";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { createHarness, createHarnessWithExtensions, type Harness } from "./test-harness.js";
+import { createHarness, createHarnessWithExtensions, type Harness } from "./test-harness.ts";
 
 describe("test harness", () => {
 	let harness: Harness;

@@ -9,10 +9,10 @@ import {
 	registerFauxProvider,
 	type ToolResultMessage,
 	type UserMessage,
-} from "@mariozechner/pi-ai";
+} from "@odinlabs-ai/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { Agent, type AgentEvent } from "../src/index.js";
-import { calculateTool } from "./utils/calculate.js";
+import { Agent, type AgentEvent } from "../src/index.ts";
+import { calculateTool } from "./utils/calculate.ts";
 
 const registrations: FauxProviderRegistration[] = [];
 

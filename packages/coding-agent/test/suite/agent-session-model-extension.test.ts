@@ -1,9 +1,9 @@
-import type { AgentTool, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall, type Model } from "@mariozechner/pi-ai";
-import { Type } from "@sinclair/typebox";
+import type { AgentTool, ThinkingLevel } from "@odinlabs-ai/pi-agent-core";
+import { fauxAssistantMessage, fauxToolCall, type Model } from "@odinlabs-ai/pi-ai";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExtensionAPI } from "../../src/index.js";
-import { createHarness, getAssistantTexts, type Harness } from "./harness.js";
+import type { BuildSystemPromptOptions, ExtensionAPI } from "../../src/index.ts";
+import { createHarness, getAssistantTexts, type Harness } from "./harness.ts";
 
 describe("AgentSession model and extension characterization", () => {
 	const harnesses: Harness[] = [];
@@ -260,6 +260,34 @@ describe("AgentSession model and extension characterization", () => {
 		expect(extensionApi).toBeDefined();
 	});
 
+	it("allows extension commands to inspect live system prompt options", async () => {
+		const seenOptions: BuildSystemPromptOptions[] = [];
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.registerCommand("inspect-options", {
+						description: "Inspect system prompt options",
+						handler: async (_args, ctx) => {
+							const options = ctx.getSystemPromptOptions();
+							seenOptions.push(options);
+							options.selectedTools?.push("mutated_tool");
+						},
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		await harness.session.prompt("/inspect-options");
+		await harness.session.prompt("/inspect-options");
+
+		expect(seenOptions).toHaveLength(2);
+		expect(seenOptions[0]).toBe(seenOptions[1]);
+		expect(seenOptions[0]?.cwd).toBe(harness.tempDir);
+		expect(seenOptions[0]?.selectedTools).toContain("read");
+		expect(seenOptions[1]?.selectedTools).toContain("mutated_tool");
+	});
+
 	it("allows before_agent_start handlers to inject custom messages and modify the system prompt", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
@@ -309,8 +337,8 @@ describe("AgentSession model and extension characterization", () => {
 					pi.on("session_start", async (event) => {
 						lifecycleEvents.push(`start:${event.reason}`);
 					});
-					pi.on("session_shutdown", async () => {
-						lifecycleEvents.push("shutdown");
+					pi.on("session_shutdown", async (event) => {
+						lifecycleEvents.push(`shutdown:${event.reason}`);
 					});
 				},
 			],
@@ -320,6 +348,6 @@ describe("AgentSession model and extension characterization", () => {
 		await harness.session.bindExtensions({ shutdownHandler: () => {} });
 		await harness.session.reload();
 
-		expect(lifecycleEvents).toEqual(["start:startup", "shutdown", "start:reload"]);
+		expect(lifecycleEvents).toEqual(["start:startup", "shutdown:reload", "start:reload"]);
 	});
 });

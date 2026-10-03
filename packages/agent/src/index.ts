@@ -1,8 +1,5 @@
-// Core Agent
-export * from "./agent.js";
-// Loop functions
-export * from "./agent-loop.js";
-// Proxy utilities
-export * from "./proxy.js";
-// Types
-export * from "./types.js";
+// Import the default pi-ai entrypoint so that all built-in providers register
+// automatically. Unlike "@odinlabs-ai/pi-ai/base" which does not.
+import "@odinlabs-ai/pi-ai";
+
+export * from "./base.ts";

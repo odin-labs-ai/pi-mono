@@ -7,7 +7,7 @@
 
 import assert from "node:assert";
 import { beforeEach, describe, it } from "node:test";
-import { StdinBuffer } from "../src/stdin-buffer.js";
+import { StdinBuffer } from "../src/stdin-buffer.ts";
 
 describe("StdinBuffer", () => {
 	let buffer: StdinBuffer;
@@ -198,15 +198,51 @@ describe("StdinBuffer", () => {
 			assert.deepStrictEqual(emittedSequences, ["\x1b[3;1:3~"]);
 		});
 
+		it("should split ESC+ESC+CSI into standalone ESC and the CSI sequence (WezTerm Escape key regression)", () => {
+			// WezTerm with enable_kitty_keyboard sends Escape key press as raw \x1b
+			// and the release as a full Kitty CSI-u sequence, concatenated.
+			// The buffer must not treat \x1b\x1b as a complete meta-key when the
+			// following byte starts a new escape sequence.
+			processInput("\x1b\x1b[27;129:3u");
+			assert.deepStrictEqual(emittedSequences, ["\x1b", "\x1b[27;129:3u"]);
+		});
+
+		it("should split ESC+ESC+CSI with no modifier (no num_lock)", () => {
+			processInput("\x1b\x1b[27;1:3u");
+			assert.deepStrictEqual(emittedSequences, ["\x1b", "\x1b[27;1:3u"]);
+		});
+
+		it("should still emit ESC+ESC as a single sequence when not followed by a new escape", () => {
+			// \x1b\x1b alone (no following CSI) stays as-is — e.g. ctrl+alt+[
+			processInput("\x1b\x1b");
+			assert.deepStrictEqual(emittedSequences, ["\x1b\x1b"]);
+		});
+
 		it("should handle plain characters mixed with Kitty sequences", () => {
 			// Plain 'a' followed by Kitty release
 			processInput("a\x1b[97;1:3u");
 			assert.deepStrictEqual(emittedSequences, ["a", "\x1b[97;1:3u"]);
 		});
 
-		it("should handle Kitty sequence followed by plain characters", () => {
-			processInput("\x1b[97ua");
-			assert.deepStrictEqual(emittedSequences, ["\x1b[97u", "a"]);
+		it("should drop raw duplicate character after matching Kitty printable sequence", () => {
+			processInput("\x1b[224uà");
+			assert.deepStrictEqual(emittedSequences, ["\x1b[224u"]);
+		});
+
+		it("should drop raw duplicate character after matching Kitty printable sequence across chunks", () => {
+			processInput("\x1b[64u");
+			processInput("@");
+			assert.deepStrictEqual(emittedSequences, ["\x1b[64u"]);
+		});
+
+		it("should keep non-matching plain character after Kitty printable sequence", () => {
+			processInput("\x1b[97ub");
+			assert.deepStrictEqual(emittedSequences, ["\x1b[97u", "b"]);
+		});
+
+		it("should keep raw character after modified Kitty printable sequence", () => {
+			processInput("\x1b[64;3u@");
+			assert.deepStrictEqual(emittedSequences, ["\x1b[64;3u", "@"]);
 		});
 
 		it("should handle rapid typing simulation with Kitty protocol", () => {
@@ -396,6 +432,42 @@ describe("StdinBuffer", () => {
 
 			assert.deepStrictEqual(emittedPaste, ["Hello 世界 🎉"]);
 			assert.deepStrictEqual(emittedSequences, []);
+		});
+
+		it("should salvage a paste whose closing marker never arrives", async () => {
+			buffer = new StdinBuffer({ pasteInactivityTimeout: 20, pasteAbsoluteTimeout: 100 });
+			buffer.on("paste", (data) => emittedPaste.push(data));
+			buffer.on("data", (sequence) => emittedSequences.push(sequence));
+
+			processInput("\x1b[200~truncated paste");
+			await wait(30);
+
+			assert.deepStrictEqual(emittedPaste, ["truncated paste"]);
+			processInput("x");
+			assert.deepStrictEqual(emittedSequences, ["x"]);
+		});
+
+		it("should bound a paste even while chunks continue arriving", async () => {
+			buffer = new StdinBuffer({ pasteInactivityTimeout: 80, pasteAbsoluteTimeout: 45 });
+			buffer.on("paste", (data) => emittedPaste.push(data));
+
+			processInput("\x1b[200~one");
+			await wait(20);
+			processInput("-two");
+			await wait(35);
+
+			assert.deepStrictEqual(emittedPaste, ["one-two"]);
+		});
+
+		it("should cancel paste recovery when cleared", async () => {
+			buffer = new StdinBuffer({ pasteInactivityTimeout: 20, pasteAbsoluteTimeout: 100 });
+			buffer.on("paste", (data) => emittedPaste.push(data));
+
+			processInput("\x1b[200~discard me");
+			buffer.clear();
+			await wait(30);
+
+			assert.deepStrictEqual(emittedPaste, []);
 		});
 	});
 

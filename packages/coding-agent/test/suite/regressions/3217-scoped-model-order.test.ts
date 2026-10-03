@@ -1,10 +1,11 @@
-import type { TUI } from "@mariozechner/pi-tui";
-import stripAnsi from "strip-ansi";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ModelSelectorComponent } from "../../../src/modes/interactive/components/model-selector.js";
-import { ScopedModelsSelectorComponent } from "../../../src/modes/interactive/components/scoped-models-selector.js";
-import { initTheme } from "../../../src/modes/interactive/theme/theme.js";
-import { createHarness, type Harness } from "../harness.js";
+import { setKeybindings, type TUI } from "@odinlabs-ai/pi-tui";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { KeybindingsManager } from "../../../src/core/keybindings.ts";
+import { ModelSelectorComponent } from "../../../src/modes/interactive/components/model-selector.ts";
+import { ScopedModelsSelectorComponent } from "../../../src/modes/interactive/components/scoped-models-selector.ts";
+import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../../../src/utils/ansi.ts";
+import { createHarness, type Harness } from "../harness.ts";
 
 function createFakeTui(): TUI {
 	return {
@@ -21,6 +22,11 @@ describe("issue #3217 scoped model ordering", () => {
 
 	beforeAll(() => {
 		initTheme("dark");
+	});
+
+	beforeEach(() => {
+		// Ensure test isolation: keybindings are a global singleton
+		setKeybindings(new KeybindingsManager());
 	});
 
 	afterEach(() => {

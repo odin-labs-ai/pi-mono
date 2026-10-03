@@ -1,8 +1,8 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { getModel } from "../src/models.js";
-import { complete, getEnvApiKey } from "../src/stream.js";
-import type { AssistantMessage, Context, Message, Tool, ToolCall } from "../src/types.js";
+import { complete, getEnvApiKey } from "../src/index.ts";
+import { getModel } from "../src/models.ts";
+import type { AssistantMessage, Context, Message, Tool, ToolCall } from "../src/types.ts";
 
 const testToolSchema = Type.Object({
 	value: Type.Number({ description: "A number to double" }),

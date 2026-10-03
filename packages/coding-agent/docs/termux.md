@@ -17,7 +17,9 @@ pkg update && pkg upgrade
 pkg install nodejs termux-api git
 
 # Install pi
-npm install -g @mariozechner/pi-coding-agent
+npm config set @odinlabs-ai:registry https://npm.pkg.github.com
+npm login --scope=@odinlabs-ai --auth-type=legacy --registry=https://npm.pkg.github.com
+npm install -g --ignore-scripts @odinlabs-ai/pi-coding-agent
 
 # Create config directory
 mkdir -p ~/.pi/agent
@@ -25,6 +27,8 @@ mkdir -p ~/.pi/agent
 # Run pi
 pi
 ```
+
+At the login prompts, use your GitHub username and a token with `read:packages` as the password.
 
 ## Clipboard Support
 
@@ -36,7 +40,7 @@ Image clipboard is not supported on Termux (the `ctrl+v` image paste feature wil
 
 Create `~/.pi/agent/AGENTS.md` to help the agent understand the Termux environment:
 
-```markdown
+````markdown
 # Agent Environment: Termux on Android
 
 ## Location
@@ -53,7 +57,7 @@ termux-open-url "https://example.com"
 ## Opening Files
 ```bash
 termux-open file.pdf          # Opens with default app
-termux-open -c image.jpg      # Choose app
+termux-open --chooser image.jpg      # Choose app
 ```
 
 ## Clipboard
@@ -91,7 +95,7 @@ termux-camera-photo out.jpg   # Take photo
 - Termux:API app must be installed for `termux-*` commands
 - Use `pkg install termux-api` for the command-line tools
 - Storage permission needed for `/storage/emulated/0` access
-```
+````
 
 ## Limitations
 

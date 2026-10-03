@@ -1,7 +1,7 @@
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@mariozechner/pi-tui";
-import { getSelectListTheme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import type { ThinkingLevel } from "@odinlabs-ai/pi-agent-core";
+import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@odinlabs-ai/pi-tui";
+import { getSelectListTheme } from "../theme/theme.ts";
+import { DynamicBorder } from "./dynamic-border.ts";
 
 const THINKING_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 12,

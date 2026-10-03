@@ -1,11 +1,13 @@
-import type { AgentState } from "@mariozechner/pi-agent-core";
+import type { AgentState } from "@odinlabs-ai/pi-agent-core";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
-import { APP_NAME, getExportTemplateDir } from "../../config.js";
-import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.js";
-import type { ToolDefinition } from "../extensions/types.js";
-import type { SessionEntry } from "../session-manager.js";
-import { SessionManager } from "../session-manager.js";
+import { APP_NAME, getExportTemplateDir } from "../../config.ts";
+import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.ts";
+import { normalizePath, resolvePath } from "../../utils/paths.ts";
+import type { ToolDefinition } from "../extensions/types.ts";
+import type { SessionEntry } from "../session-manager.ts";
+import { SessionManager } from "../session-manager.ts";
+import { parseSkillBlock } from "../skill-block-parser.ts";
 
 /**
  * Interface for rendering custom tools to HTML.
@@ -136,6 +138,17 @@ interface SessionData {
 	renderedTools?: Record<string, RenderedToolHtml>;
 }
 
+const SKILL_BLOCK_PARSER_MARKER = "/*__PI_SKILL_BLOCK_PARSER__*/ undefined";
+
+/** Inject the canonical parser into the standalone browser application. */
+export function injectSkillBlockParser(templateJs: string): string {
+	const occurrences = templateJs.split(SKILL_BLOCK_PARSER_MARKER).length - 1;
+	if (occurrences !== 1) {
+		throw new Error(`Expected exactly one skill-block parser marker, found ${occurrences}`);
+	}
+	return templateJs.replace(SKILL_BLOCK_PARSER_MARKER, `(${parseSkillBlock.toString()})`);
+}
+
 /**
  * Core HTML generation logic shared by both export functions.
  */
@@ -143,7 +156,7 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 	const templateDir = getExportTemplateDir();
 	const template = readFileSync(join(templateDir, "template.html"), "utf-8");
 	const templateCss = readFileSync(join(templateDir, "template.css"), "utf-8");
-	const templateJs = readFileSync(join(templateDir, "template.js"), "utf-8");
+	const templateJs = injectSkillBlockParser(readFileSync(join(templateDir, "template.js"), "utf-8"));
 	const markedJs = readFileSync(join(templateDir, "vendor", "marked.min.js"), "utf-8");
 	const hljsJs = readFileSync(join(templateDir, "vendor", "highlight.min.js"), "utf-8");
 
@@ -173,8 +186,8 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 		.replace("{{HIGHLIGHT_JS}}", hljsJs);
 }
 
-/** Built-in tool names that have custom rendering in template.js */
-const BUILTIN_TOOLS = new Set(["bash", "read", "write", "edit", "ls", "find", "grep"]);
+/** Tools rendered directly by the HTML template (not pre-rendered via TUI→ANSI→HTML pipeline) */
+const TEMPLATE_RENDERED_TOOLS = new Set(["bash", "read", "write", "edit", "ls"]);
 
 /**
  * Pre-render custom tools to HTML using their TUI renderers.
@@ -192,7 +205,7 @@ function preRenderCustomTools(
 		// Find tool calls in assistant messages
 		if (msg.role === "assistant" && Array.isArray(msg.content)) {
 			for (const block of msg.content) {
-				if (block.type === "toolCall" && !BUILTIN_TOOLS.has(block.name)) {
+				if (block.type === "toolCall" && !TEMPLATE_RENDERED_TOOLS.has(block.name)) {
 					const callHtml = toolRenderer.renderCall(block.id, block.name, block.arguments);
 					if (callHtml) {
 						renderedTools[block.id] = { callHtml };
@@ -204,9 +217,9 @@ function preRenderCustomTools(
 		// Find tool results
 		if (msg.role === "toolResult" && msg.toolCallId) {
 			const toolName = msg.toolName || "";
-			// Only render if we have a pre-rendered call OR it's not a built-in tool
+			// Only render if we have a pre-rendered call OR it's not template-rendered
 			const existing = renderedTools[msg.toolCallId];
-			if (existing || !BUILTIN_TOOLS.has(toolName)) {
+			if (existing || !TEMPLATE_RENDERED_TOOLS.has(toolName)) {
 				const rendered = toolRenderer.renderResult(
 					msg.toolCallId,
 					toolName,
@@ -270,7 +283,7 @@ export async function exportSessionToHtml(
 
 	const html = generateHtml(sessionData, opts.themeName);
 
-	let outputPath = opts.outputPath;
+	let outputPath = opts.outputPath ? normalizePath(opts.outputPath) : undefined;
 	if (!outputPath) {
 		const sessionBasename = basename(sessionFile, ".jsonl");
 		outputPath = `${APP_NAME}-session-${sessionBasename}.html`;
@@ -286,12 +299,13 @@ export async function exportSessionToHtml(
  */
 export async function exportFromFile(inputPath: string, options?: ExportOptions | string): Promise<string> {
 	const opts: ExportOptions = typeof options === "string" ? { outputPath: options } : options || {};
+	const resolvedInputPath = resolvePath(inputPath);
 
-	if (!existsSync(inputPath)) {
-		throw new Error(`File not found: ${inputPath}`);
+	if (!existsSync(resolvedInputPath)) {
+		throw new Error(`File not found: ${resolvedInputPath}`);
 	}
 
-	const sm = SessionManager.open(inputPath);
+	const sm = SessionManager.open(resolvedInputPath);
 
 	const sessionData: SessionData = {
 		header: sm.getHeader(),
@@ -303,9 +317,9 @@ export async function exportFromFile(inputPath: string, options?: ExportOptions 
 
 	const html = generateHtml(sessionData, opts.themeName);
 
-	let outputPath = opts.outputPath;
+	let outputPath = opts.outputPath ? normalizePath(opts.outputPath) : undefined;
 	if (!outputPath) {
-		const inputBasename = basename(inputPath, ".jsonl");
+		const inputBasename = basename(resolvedInputPath, ".jsonl");
 		outputPath = `${APP_NAME}-session-${inputBasename}.html`;
 	}
 

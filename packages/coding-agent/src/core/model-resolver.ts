@@ -2,39 +2,51 @@
  * Model resolution, scoping, and initial selection
  */
 
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@odinlabs-ai/pi-agent-core";
+import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@odinlabs-ai/pi-ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
-import { isValidThinkingLevel } from "../cli/args.js";
-import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
-import type { ModelRegistry } from "./model-registry.js";
+import { isValidThinkingLevel } from "../cli/args.ts";
+import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import type { ModelRegistry } from "./model-registry.ts";
 
 /** Default model IDs for each known provider */
 export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	"amazon-bedrock": "us.anthropic.claude-opus-4-6-v1",
-	anthropic: "claude-opus-4-6",
+	"ant-ling": "Ring-2.6-1T",
+	anthropic: "claude-opus-4-8",
 	openai: "gpt-5.4",
-	"azure-openai-responses": "gpt-5.2",
-	"openai-codex": "gpt-5.4",
-	google: "gemini-2.5-pro",
-	"google-gemini-cli": "gemini-2.5-pro",
-	"google-antigravity": "gemini-3.1-pro-high",
-	"google-vertex": "gemini-3-pro-preview",
-	"github-copilot": "gpt-4o",
-	openrouter: "openai/gpt-5.1-codex",
-	"vercel-ai-gateway": "anthropic/claude-opus-4-6",
-	xai: "grok-4-fast-non-reasoning",
+	"azure-openai-responses": "gpt-5.4",
+	"openai-codex": "gpt-5.5",
+	nvidia: "nvidia/nemotron-3-super-120b-a12b",
+	deepseek: "deepseek-v4-pro",
+	google: "gemini-3.1-pro-preview",
+	"google-vertex": "gemini-3.1-pro-preview",
+	"github-copilot": "gpt-5.4",
+	openrouter: "moonshotai/kimi-k2.6",
+	"vercel-ai-gateway": "zai/glm-5.1",
+	xai: "grok-4.20-0309-reasoning",
 	groq: "openai/gpt-oss-120b",
 	cerebras: "zai-glm-4.7",
-	zai: "glm-5",
+	zai: "glm-5.1",
+	"zai-coding-cn": "glm-5.1",
 	mistral: "devstral-medium-latest",
 	minimax: "MiniMax-M2.7",
 	"minimax-cn": "MiniMax-M2.7",
-	huggingface: "moonshotai/Kimi-K2.5",
-	opencode: "claude-opus-4-6",
-	"opencode-go": "kimi-k2.5",
+	moonshotai: "kimi-k2.6",
+	"moonshotai-cn": "kimi-k2.6",
+	huggingface: "moonshotai/Kimi-K2.6",
+	fireworks: "accounts/fireworks/models/kimi-k2p6",
+	together: "moonshotai/Kimi-K2.6",
+	opencode: "kimi-k2.6",
+	"opencode-go": "kimi-k2.6",
 	"kimi-coding": "kimi-for-coding",
+	"cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
+	"cloudflare-ai-gateway": "workers-ai/@cf/moonshotai/kimi-k2.6",
+	xiaomi: "mimo-v2.5-pro",
+	"xiaomi-token-plan-cn": "mimo-v2.5-pro",
+	"xiaomi-token-plan-ams": "mimo-v2.5-pro",
+	"xiaomi-token-plan-sgp": "mimo-v2.5-pro",
 };
 
 export interface ScopedModel {
@@ -328,9 +340,10 @@ export interface ResolveCliModelResult {
 export function resolveCliModel(options: {
 	cliProvider?: string;
 	cliModel?: string;
+	cliThinking?: ThinkingLevel;
 	modelRegistry: ModelRegistry;
 }): ResolveCliModelResult {
-	const { cliProvider, cliModel, modelRegistry } = options;
+	const { cliProvider, cliModel, cliThinking, modelRegistry } = options;
 
 	if (!cliModel) {
 		return { model: undefined, warning: undefined, error: undefined };
@@ -383,7 +396,7 @@ export function resolveCliModel(options: {
 		}
 	}
 
-	// If no provider was inferred from the slash, try exact matches without provider inference.
+	// If no provider was recognized from the slash, try exact matches without provider inference.
 	// This handles models whose IDs naturally contain slashes (e.g. OpenRouter-style IDs).
 	if (!provider) {
 		const lower = cliModel.toLowerCase();
@@ -412,10 +425,9 @@ export function resolveCliModel(options: {
 		return { model, thinkingLevel, warning, error: undefined };
 	}
 
-	// If we inferred a provider from the slash but found no match within that provider,
-	// fall back to matching the full input as a raw model id across all models.
-	// This handles OpenRouter-style IDs like "openai/gpt-4o:extended" where "openai"
-	// looks like a provider but the full string is actually a model id on openrouter.
+	// If provider/model syntax found no registered model, preserve the established
+	// exact raw-id interpretation for providers such as OpenRouter. This is not an
+	// authentication-based reroute: the requested provider had no match at all.
 	if (inferredProvider) {
 		const lower = cliModel.toLowerCase();
 		const exact = availableModels.find(
@@ -424,27 +436,34 @@ export function resolveCliModel(options: {
 		if (exact) {
 			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
 		}
-		// Also try parseModelPattern on the full input against all models
-		const fallback = parseModelPattern(cliModel, availableModels, {
-			allowInvalidThinkingLevelFallback: false,
-		});
-		if (fallback.model) {
-			return {
-				model: fallback.model,
-				thinkingLevel: fallback.thinkingLevel,
-				warning: fallback.warning,
-				error: undefined,
-			};
-		}
 	}
 
 	if (provider) {
-		const fallbackModel = buildFallbackModel(provider, pattern, availableModels);
+		// Parse thinking level suffix from the pattern before building the fallback model,
+		// but only when --thinking is not explicitly provided.
+		// e.g. "zai-org/GLM-5.1-FP8:high" → modelId="zai-org/GLM-5.1-FP8", fallbackThinking="high"
+		let fallbackPattern = pattern;
+		let fallbackThinking: ThinkingLevel | undefined;
+		if (!cliThinking) {
+			const lastColon = pattern.lastIndexOf(":");
+			if (lastColon !== -1) {
+				const suffix = pattern.substring(lastColon + 1);
+				if (isValidThinkingLevel(suffix)) {
+					fallbackPattern = pattern.substring(0, lastColon);
+					fallbackThinking = suffix;
+				}
+			}
+		}
+
+		const fallbackModel = buildFallbackModel(provider, fallbackPattern, availableModels);
 		if (fallbackModel) {
+			const requestedThinking = cliThinking ?? fallbackThinking;
+			const model =
+				requestedThinking && requestedThinking !== "off" ? { ...fallbackModel, reasoning: true } : fallbackModel;
 			const fallbackWarning = warning
-				? `${warning} Model "${pattern}" not found for provider "${provider}". Using custom model id.`
-				: `Model "${pattern}" not found for provider "${provider}". Using custom model id.`;
-			return { model: fallbackModel, thinkingLevel: undefined, warning: fallbackWarning, error: undefined };
+				? `${warning} Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`
+				: `Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`;
+			return { model, thinkingLevel: fallbackThinking, warning: fallbackWarning, error: undefined };
 		}
 	}
 

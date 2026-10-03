@@ -1,9 +1,9 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import type { AgentTool } from "@odinlabs-ai/pi-agent-core";
+import { fauxAssistantMessage, fauxToolCall } from "@odinlabs-ai/pi-ai";
+import type { ExtensionAPI } from "@odinlabs-ai/pi-coding-agent";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { createHarness, getAssistantTexts, getUserTexts, type Harness } from "../harness.js";
+import { createHarness, getAssistantTexts, getUserTexts, type Harness } from "../harness.ts";
 
 describe("issue #2023 queued slash-command follow-up", () => {
 	const harnesses: Harness[] = [];

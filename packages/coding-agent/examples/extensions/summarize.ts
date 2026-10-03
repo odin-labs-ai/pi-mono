@@ -1,7 +1,7 @@
-import { complete, getModel } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, matchesKey, Text } from "@mariozechner/pi-tui";
+import { complete, getModel } from "@odinlabs-ai/pi-ai";
+import type { ExtensionAPI, ExtensionCommandContext } from "@odinlabs-ai/pi-coding-agent";
+import { DynamicBorder, getMarkdownTheme } from "@odinlabs-ai/pi-coding-agent";
+import { Container, Markdown, matchesKey, Text } from "@odinlabs-ai/pi-tui";
 
 type ContentBlock = {
 	type?: string;
@@ -115,7 +115,7 @@ const buildSummaryPrompt = (conversationText: string): string =>
 	].join("\n");
 
 const showSummaryUi = async (summary: string, ctx: ExtensionCommandContext) => {
-	if (!ctx.hasUI) {
+	if (ctx.mode !== "tui") {
 		return;
 	}
 

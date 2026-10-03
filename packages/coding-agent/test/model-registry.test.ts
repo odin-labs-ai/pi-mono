@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Api, Context, Model, OpenAICompletionsCompat } from "@mariozechner/pi-ai";
-import { getApiProvider } from "@mariozechner/pi-ai";
-import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
+import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@odinlabs-ai/pi-ai";
+import { getApiProvider } from "@odinlabs-ai/pi-ai";
+import { getOAuthProvider } from "@odinlabs-ai/pi-ai/oauth";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { AuthStorage } from "../src/core/auth-storage.ts";
+import { clearApiKeyCache, ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
 
 describe("ModelRegistry", () => {
 	let tempDir: string;
@@ -25,6 +25,7 @@ describe("ModelRegistry", () => {
 			rmSync(tempDir, { recursive: true });
 		}
 		clearApiKeyCache();
+		vi.restoreAllMocks();
 	});
 
 	/** Create minimal provider config  */
@@ -32,11 +33,11 @@ describe("ModelRegistry", () => {
 		baseUrl: string,
 		models: Array<{ id: string; name?: string }>,
 		api: string = "anthropic-messages",
-	) {
+	): ProviderConfigInput {
 		return {
 			baseUrl,
-			apiKey: "TEST_KEY",
-			api,
+			apiKey: "test-key",
+			api: api as Api,
 			models: models.map((m) => ({
 				id: m.id,
 				name: m.name ?? m.id,
@@ -58,7 +59,13 @@ describe("ModelRegistry", () => {
 	}
 
 	function toShPath(value: string): string {
-		return value.replace(/\\/g, "/").replace(/"/g, '\\"');
+		const normalized = value.split("\\").join("/");
+		for (const char of normalized) {
+			const code = char.charCodeAt(0);
+			const isAlphaNumeric = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+			if (!isAlphaNumeric && !"/_.:-".includes(char)) throw new Error(`Unsafe test path: ${value}`);
+		}
+		return normalized;
 	}
 
 	/** Create a baseUrl-only override (no custom models) */
@@ -124,6 +131,28 @@ describe("ModelRegistry", () => {
 			});
 
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const anthropicModels = getModelsForProvider(registry, "anthropic");
+
+			for (const model of anthropicModels) {
+				const auth = await registry.getApiKeyAndHeaders(model);
+				expect(auth.ok).toBe(true);
+				if (auth.ok) {
+					expect(auth.headers?.["X-Custom-Header"]).toBe("custom-value");
+				}
+			}
+		});
+
+		test("headers-only override resolves at request time", async () => {
+			writeRawModelsJson({
+				anthropic: {
+					headers: {
+						"X-Custom-Header": "custom-value",
+					},
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeUndefined();
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
 
 			for (const model of anthropicModels) {
@@ -374,7 +403,44 @@ describe("ModelRegistry", () => {
 			}
 		});
 
-		test("compat schema accepts reasoningEffortMap and supportsStrictMode", () => {
+		test("model schema accepts thinkingLevelMap and compat schema accepts supportsStrictMode and cacheControlFormat", () => {
+			writeRawModelsJson({
+				demo: {
+					baseUrl: "https://example.com/v1",
+					apiKey: "DEMO_KEY",
+					api: "openai-completions",
+					models: [
+						{
+							id: "demo-model",
+							reasoning: true,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 1000,
+							maxTokens: 100,
+							thinkingLevelMap: {
+								minimal: null,
+								high: "max",
+							},
+							compat: {
+								supportsStrictMode: false,
+								cacheControlFormat: "anthropic",
+							},
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = registry.find("demo", "demo-model");
+			const compat = model?.compat as OpenAICompletionsCompat | undefined;
+
+			expect(registry.getError()).toBeUndefined();
+			expect(model?.thinkingLevelMap).toEqual({ minimal: null, high: "max" });
+			expect(compat?.supportsStrictMode).toBe(false);
+			expect(compat?.cacheControlFormat).toBe("anthropic");
+		});
+
+		test("compat schema accepts chat template thinking configuration", () => {
 			writeRawModelsJson({
 				demo: {
 					baseUrl: "https://example.com/v1",
@@ -389,11 +455,11 @@ describe("ModelRegistry", () => {
 							contextWindow: 1000,
 							maxTokens: 100,
 							compat: {
-								reasoningEffortMap: {
-									minimal: "default",
-									high: "max",
+								thinkingFormat: "chat-template",
+								chatTemplateKwargs: {
+									preserve_thinking: true,
+									thinking: { $var: "thinking.enabled" },
 								},
-								supportsStrictMode: false,
 							},
 						},
 					],
@@ -404,8 +470,69 @@ describe("ModelRegistry", () => {
 			const compat = registry.find("demo", "demo-model")?.compat as OpenAICompletionsCompat | undefined;
 
 			expect(registry.getError()).toBeUndefined();
-			expect(compat?.reasoningEffortMap).toEqual({ minimal: "default", high: "max" });
-			expect(compat?.supportsStrictMode).toBe(false);
+			expect(compat?.thinkingFormat).toBe("chat-template");
+			expect(compat?.chatTemplateKwargs).toEqual({
+				preserve_thinking: true,
+				thinking: { $var: "thinking.enabled" },
+			});
+		});
+
+		test("compat schema accepts Anthropic eager tool input streaming flag", () => {
+			writeRawModelsJson({
+				demo: {
+					baseUrl: "https://example.com",
+					apiKey: "DEMO_KEY",
+					api: "anthropic-messages",
+					compat: {
+						supportsEagerToolInputStreaming: false,
+					},
+					models: [
+						{
+							id: "demo-model",
+							reasoning: true,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 1000,
+							maxTokens: 100,
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const compat = registry.find("demo", "demo-model")?.compat as AnthropicMessagesCompat | undefined;
+
+			expect(registry.getError()).toBeUndefined();
+			expect(compat?.supportsEagerToolInputStreaming).toBe(false);
+		});
+
+		test("compat schema accepts long cache retention flag", () => {
+			writeRawModelsJson({
+				demo: {
+					baseUrl: "https://example.com",
+					apiKey: "DEMO_KEY",
+					api: "anthropic-messages",
+					compat: {
+						supportsLongCacheRetention: false,
+					},
+					models: [
+						{
+							id: "demo-model",
+							reasoning: true,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 1000,
+							maxTokens: 100,
+						},
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const compat = registry.find("demo", "demo-model")?.compat as AnthropicMessagesCompat | undefined;
+
+			expect(registry.getError()).toBeUndefined();
+			expect(compat?.supportsLongCacheRetention).toBe(false);
 		});
 
 		test("model-level baseUrl overrides provider-level baseUrl for custom models", () => {
@@ -759,6 +886,141 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("dynamic provider lifecycle", () => {
+		test("getProviderDisplayName resolves registered, OAuth, built-in, and fallback names", () => {
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+			expect(registry.getProviderDisplayName("openai")).toBe("OpenAI");
+			expect(registry.getProviderDisplayName("github-copilot")).toBe("GitHub Copilot");
+			expect(registry.getProviderDisplayName("unknown-provider")).toBe("unknown-provider");
+
+			registry.registerProvider("named-provider", {
+				name: "Named Provider",
+				baseUrl: "https://provider.test/v1",
+				apiKey: "test-key",
+				api: "openai-completions",
+				models: [
+					{
+						id: "demo-model",
+						name: "Demo Model",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 128000,
+						maxTokens: 4096,
+					},
+				],
+			});
+			expect(registry.getProviderDisplayName("named-provider")).toBe("Named Provider");
+
+			registry.registerProvider("oauth-provider", {
+				baseUrl: "https://provider.test/v1",
+				api: "openai-completions",
+				oauth: {
+					name: "OAuth Provider",
+					login: async () => ({ access: "access", refresh: "refresh", expires: Date.now() + 60_000 }),
+					refreshToken: async (credentials) => credentials,
+					getApiKey: (credentials) => credentials.access,
+				},
+				models: [
+					{
+						id: "demo-model",
+						name: "Demo Model",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 128000,
+						maxTokens: 4096,
+					},
+				],
+			});
+			expect(registry.getProviderDisplayName("oauth-provider")).toBe("OAuth Provider");
+		});
+
+		test("stored API key env propagates to request auth and resolves headers", async () => {
+			authStorage.set("cloudflare-ai-gateway", {
+				type: "api_key",
+				key: "$CLOUDFLARE_API_KEY",
+				env: {
+					CLOUDFLARE_API_KEY: "stored-cf-token",
+					CLOUDFLARE_ACCOUNT_ID: "stored-account",
+				},
+			});
+			writeRawModelsJson({
+				"cloudflare-ai-gateway": {
+					headers: { "x-account": "$CLOUDFLARE_ACCOUNT_ID" },
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = registry.getAll().find((m) => m.provider === "cloudflare-ai-gateway");
+			expect(model).toBeDefined();
+
+			const auth = await registry.getApiKeyAndHeaders(model!);
+
+			expect(auth).toEqual({
+				ok: true,
+				apiKey: "stored-cf-token",
+				headers: { "x-account": "stored-account" },
+				env: {
+					CLOUDFLARE_API_KEY: "stored-cf-token",
+					CLOUDFLARE_ACCOUNT_ID: "stored-account",
+				},
+			});
+		});
+
+		test("registerProvider treats uppercase apiKey and headers as literals", async () => {
+			const envKeys = ["CUSTOM_NAME", "BEARER", "MODEL_TOKEN"];
+			const savedEnv: Record<string, string | undefined> = {};
+			for (const key of envKeys) {
+				savedEnv[key] = process.env[key];
+				process.env[key] = `env-${key}`;
+			}
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			try {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				registry.registerProvider("literal-provider", {
+					...providerConfig("https://provider.test/v1", [{ id: "demo-model" }], "openai-completions"),
+					apiKey: "CUSTOM_NAME",
+					headers: { Authorization: "BEARER" },
+					models: [
+						{
+							id: "demo-model",
+							name: "demo-model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+							headers: { "x-model-token": "MODEL_TOKEN" },
+						},
+					],
+				});
+
+				expect(await registry.getApiKeyForProvider("literal-provider")).toBe("CUSTOM_NAME");
+				const model = registry.find("literal-provider", "demo-model");
+				expect(model).toBeDefined();
+				expect(await registry.getApiKeyAndHeaders(model!)).toMatchObject({
+					ok: true,
+					apiKey: "CUSTOM_NAME",
+					headers: {
+						Authorization: "BEARER",
+						"x-model-token": "MODEL_TOKEN",
+					},
+				});
+				expect(warnSpy).not.toHaveBeenCalled();
+			} finally {
+				for (const key of envKeys) {
+					if (savedEnv[key] === undefined) {
+						delete process.env[key];
+					} else {
+						process.env[key] = savedEnv[key];
+					}
+				}
+			}
+		});
+
 		test("failed registerProvider does not persist invalid streamSimple config", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 
@@ -778,7 +1040,7 @@ describe("ModelRegistry", () => {
 
 			registry.registerProvider("demo-provider", {
 				baseUrl: "https://provider.test/v1",
-				apiKey: "TEST_KEY",
+				apiKey: "test-key",
 				api: "openai-completions",
 				models: [
 					{
@@ -798,7 +1060,7 @@ describe("ModelRegistry", () => {
 			expect(() =>
 				registry.registerProvider("demo-provider", {
 					baseUrl: "https://provider.test/v2",
-					apiKey: "TEST_KEY",
+					apiKey: "test-key",
 					models: [
 						{
 							id: "broken-model",
@@ -869,6 +1131,101 @@ describe("ModelRegistry", () => {
 					error instanceof Error && error.message === "custom streamSimple override";
 			}
 			expect(threwCustomOverrideAfterUnregister).toBe(false);
+		});
+
+		describe("dynamic provider override persistence", () => {
+			test("baseUrl-only override keeps built-in provider models after refresh", () => {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				registry.registerProvider("anthropic", { baseUrl: "https://proxy.test/anthropic" });
+				registry.refresh();
+
+				const anthropicModels = getModelsForProvider(registry, "anthropic");
+				expect(anthropicModels.length).toBeGreaterThan(1);
+				expect(anthropicModels.every((m) => m.baseUrl === "https://proxy.test/anthropic")).toBe(true);
+			});
+
+			test("models-only override replaces built-in provider models after refresh", () => {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				registry.registerProvider("anthropic", {
+					...providerConfig("https://custom.test/anthropic", [{ id: "custom-claude" }], "anthropic-messages"),
+					baseUrl: "https://custom.test/anthropic",
+				});
+				registry.refresh();
+
+				expect(getModelsForProvider(registry, "anthropic").map((m) => m.id)).toEqual(["custom-claude"]);
+				expect(registry.find("anthropic", "custom-claude")?.baseUrl).toBe("https://custom.test/anthropic");
+			});
+
+			test("models plus baseUrl override replaces built-in provider models after refresh", () => {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				registry.registerProvider("anthropic", {
+					...providerConfig("https://custom.test/anthropic", [{ id: "custom-claude" }], "anthropic-messages"),
+					baseUrl: "https://custom.test/anthropic",
+				});
+				registry.registerProvider("anthropic", { baseUrl: "https://proxy.test/anthropic" });
+				registry.refresh();
+
+				expect(getModelsForProvider(registry, "anthropic").map((m) => m.id)).toEqual(["custom-claude"]);
+				expect(registry.find("anthropic", "custom-claude")?.baseUrl).toBe("https://proxy.test/anthropic");
+			});
+
+			test("models-only custom provider registration survives refresh", () => {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				registry.registerProvider(
+					"custom-provider",
+					providerConfig("https://custom.test/v1", [{ id: "custom-a" }, { id: "custom-b" }], "openai-completions"),
+				);
+				registry.refresh();
+
+				expect(getModelsForProvider(registry, "custom-provider").map((m) => m.id)).toEqual([
+					"custom-a",
+					"custom-b",
+				]);
+			});
+
+			test("baseUrl-only override keeps custom provider models after refresh", () => {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				registry.registerProvider(
+					"custom-provider",
+					providerConfig("https://custom.test/v1", [{ id: "custom-a" }, { id: "custom-b" }], "openai-completions"),
+				);
+				registry.registerProvider("custom-provider", { baseUrl: "https://proxy.test/custom" });
+				registry.refresh();
+
+				expect(getModelsForProvider(registry, "custom-provider").map((m) => m.id)).toEqual([
+					"custom-a",
+					"custom-b",
+				]);
+				expect(
+					getModelsForProvider(registry, "custom-provider").every(
+						(m) => m.baseUrl === "https://proxy.test/custom",
+					),
+				).toBe(true);
+			});
+
+			test("headers-only override keeps custom provider models after refresh", async () => {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				registry.registerProvider(
+					"custom-provider",
+					providerConfig("https://custom.test/v1", [{ id: "custom-a" }, { id: "custom-b" }], "openai-completions"),
+				);
+				registry.registerProvider("custom-provider", { headers: { "x-proxy": "enabled" } });
+				registry.refresh();
+
+				const models = getModelsForProvider(registry, "custom-provider");
+				expect(models.map((m) => m.id)).toEqual(["custom-a", "custom-b"]);
+				expect(models.every((m) => m.baseUrl === "https://custom.test/v1")).toBe(true);
+				expect(await registry.getApiKeyAndHeaders(models[0])).toMatchObject({
+					ok: true,
+					headers: { "x-proxy": "enabled" },
+				});
+			});
 		});
 	});
 
@@ -959,7 +1316,117 @@ describe("ModelRegistry", () => {
 			expect(apiKey).toBeUndefined();
 		});
 
-		test("apiKey as environment variable name resolves to env value", async () => {
+		test("apiKey with $ prefix resolves to env value", async () => {
+			const originalEnv = process.env.TEST_API_KEY_12345;
+			process.env.TEST_API_KEY_12345 = "env-api-key-value";
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey("$TEST_API_KEY_12345"),
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+				expect(apiKey).toBe("env-api-key-value");
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_API_KEY_12345;
+				} else {
+					process.env.TEST_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("apiKey with braced env syntax resolves to env value", async () => {
+			const originalEnv = process.env.TEST_BRACED_API_KEY_12345;
+			process.env.TEST_BRACED_API_KEY_12345 = "braced-env-api-key-value";
+			const bracedKey = "$" + "{TEST_BRACED_API_KEY_12345}";
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(bracedKey),
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+				expect(apiKey).toBe("braced-env-api-key-value");
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_BRACED_API_KEY_12345;
+				} else {
+					process.env.TEST_BRACED_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("apiKey interpolates braced env references inside literals", async () => {
+			const originalPartA = process.env.TEST_INTERPOLATED_PART_A_12345;
+			const originalPartB = process.env.TEST_INTERPOLATED_PART_B_12345;
+			process.env.TEST_INTERPOLATED_PART_A_12345 = "left";
+			process.env.TEST_INTERPOLATED_PART_B_12345 = "right";
+			const interpolatedKey = ["$", "{TEST_INTERPOLATED_PART_A_12345}_$", "{TEST_INTERPOLATED_PART_B_12345}"].join(
+				"",
+			);
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(interpolatedKey),
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+				expect(apiKey).toBe("left_right");
+			} finally {
+				if (originalPartA === undefined) {
+					delete process.env.TEST_INTERPOLATED_PART_A_12345;
+				} else {
+					process.env.TEST_INTERPOLATED_PART_A_12345 = originalPartA;
+				}
+				if (originalPartB === undefined) {
+					delete process.env.TEST_INTERPOLATED_PART_B_12345;
+				} else {
+					process.env.TEST_INTERPOLATED_PART_B_12345 = originalPartB;
+				}
+			}
+		});
+
+		test("apiKey with $$ prefix escapes a leading dollar", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("$$TEST_API_KEY_12345"),
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("$TEST_API_KEY_12345");
+		});
+
+		test("apiKey with $! escapes a literal bang and still interpolates later env refs", async () => {
+			const originalEnv = process.env.TEST_API_KEY_12345;
+			process.env.TEST_API_KEY_12345 = "env-api-key-value";
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey("$!literal-$TEST_API_KEY_12345"),
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+				expect(apiKey).toBe("!literal-env-api-key-value");
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_API_KEY_12345;
+				} else {
+					process.env.TEST_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("plain apiKey is used directly even when it matches an env var", async () => {
 			const originalEnv = process.env.TEST_API_KEY_12345;
 			process.env.TEST_API_KEY_12345 = "env-api-key-value";
 
@@ -971,7 +1438,7 @@ describe("ModelRegistry", () => {
 				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 				const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
-				expect(apiKey).toBe("env-api-key-value");
+				expect(apiKey).toBe("TEST_API_KEY_12345");
 			} finally {
 				if (originalEnv === undefined) {
 					delete process.env.TEST_API_KEY_12345;
@@ -1082,6 +1549,122 @@ describe("ModelRegistry", () => {
 				expect(count).toBe(2);
 			});
 
+			test("provider auth status reports apiKey environment variables from models.json", () => {
+				const envVarName = "TEST_API_KEY_STATUS_TEST_98765";
+				const originalEnv = process.env[envVarName];
+
+				try {
+					process.env[envVarName] = "status-test-key";
+
+					writeRawModelsJson({
+						"custom-provider": providerWithApiKey(`$${envVarName}`),
+					});
+
+					const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+					expect(registry.getProviderAuthStatus("custom-provider")).toEqual({
+						configured: true,
+						source: "environment",
+						label: envVarName,
+					});
+				} finally {
+					if (originalEnv === undefined) {
+						delete process.env[envVarName];
+					} else {
+						process.env[envVarName] = originalEnv;
+					}
+				}
+			});
+
+			test("provider auth status reports interpolated apiKey environment variables", () => {
+				const envVarNameA = "TEST_API_KEY_STATUS_PART_A_98765";
+				const envVarNameB = "TEST_API_KEY_STATUS_PART_B_98765";
+				const originalEnvA = process.env[envVarNameA];
+				const originalEnvB = process.env[envVarNameB];
+				process.env[envVarNameA] = "left";
+				process.env[envVarNameB] = "right";
+				const interpolatedKey = ["$", "{", envVarNameA, "}_$", "{", envVarNameB, "}"].join("");
+
+				try {
+					writeRawModelsJson({
+						"custom-provider": providerWithApiKey(interpolatedKey),
+					});
+
+					const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+					expect(registry.getProviderAuthStatus("custom-provider")).toEqual({
+						configured: true,
+						source: "environment",
+						label: `${envVarNameA}, ${envVarNameB}`,
+					});
+				} finally {
+					if (originalEnvA === undefined) {
+						delete process.env[envVarNameA];
+					} else {
+						process.env[envVarNameA] = originalEnvA;
+					}
+					if (originalEnvB === undefined) {
+						delete process.env[envVarNameB];
+					} else {
+						process.env[envVarNameB] = originalEnvB;
+					}
+				}
+			});
+
+			test("provider auth status reports non-env apiKey values from models.json as a config key", () => {
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey("literal_api_key_value"),
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				expect(registry.getProviderAuthStatus("custom-provider")).toEqual({
+					configured: true,
+					source: "models_json_key",
+				});
+			});
+
+			test("missing explicit env apiKey keeps provider unavailable", () => {
+				const envVarName = "TEST_API_KEY_MISSING_TEST_98765";
+				const originalEnv = process.env[envVarName];
+				delete process.env[envVarName];
+
+				try {
+					writeRawModelsJson({
+						"custom-provider": providerWithApiKey(`$${envVarName}`),
+					});
+
+					const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+					expect(registry.getProviderAuthStatus("custom-provider")).toEqual({ configured: false });
+					expect(registry.getAvailable().some((model) => model.provider === "custom-provider")).toBe(false);
+				} finally {
+					if (originalEnv === undefined) {
+						delete process.env[envVarName];
+					} else {
+						process.env[envVarName] = originalEnv;
+					}
+				}
+			});
+
+			test("provider auth status reports command apiKey values from models.json without executing them", () => {
+				const counterFile = join(tempDir, "status-counter");
+				writeFileSync(counterFile, "0");
+				const counterPath = toShPath(counterFile);
+				const command = `!sh -c 'echo 1 > "${counterPath}"; echo key-value'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				expect(registry.getProviderAuthStatus("custom-provider")).toEqual({
+					configured: true,
+					source: "models_json_command",
+				});
+				expect(readFileSync(counterFile, "utf-8")).toBe("0");
+			});
+
 			test("environment variables are not cached (changes are picked up)", async () => {
 				const envVarName = "TEST_API_KEY_CACHE_TEST_98765";
 				const originalEnv = process.env[envVarName];
@@ -1090,7 +1673,7 @@ describe("ModelRegistry", () => {
 					process.env[envVarName] = "first-value";
 
 					writeRawModelsJson({
-						"custom-provider": providerWithApiKey(envVarName),
+						"custom-provider": providerWithApiKey(`$${envVarName}`),
 					});
 
 					const registry = ModelRegistry.create(authStorage, modelsJsonPath);
@@ -1127,6 +1710,25 @@ describe("ModelRegistry", () => {
 				expect(available.some((m) => m.provider === "custom-provider")).toBe(true);
 				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
 				expect(count).toBe(0);
+			});
+
+			test("getAvailable filters GitHub Copilot OAuth models to account picker availability", () => {
+				authStorage.set("github-copilot", {
+					type: "oauth",
+					refresh: "github-access-token",
+					access: "tid=test;exp=9999999999;proxy-ep=proxy.individual.githubcopilot.com;",
+					expires: Date.now() + 60_000,
+					availableModelIds: ["gpt-4.1"],
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				expect(
+					registry
+						.getAvailable()
+						.filter((m) => m.provider === "github-copilot")
+						.map((m) => m.id),
+				).toEqual(["gpt-4.1"]);
 			});
 
 			test("getApiKeyAndHeaders resolves authHeader on every request", async () => {

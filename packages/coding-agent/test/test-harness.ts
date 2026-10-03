@@ -10,8 +10,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { Agent } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@odinlabs-ai/pi-agent-core";
+import { Agent } from "@odinlabs-ai/pi-agent-core";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -24,20 +24,20 @@ import type {
 	ThinkingContent,
 	ToolCall,
 	Usage,
-} from "@mariozechner/pi-ai";
-import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
-import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import type { Settings } from "../src/core/settings-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
-import type { ExtensionFactory, ResourceLoader } from "../src/index.js";
+} from "@odinlabs-ai/pi-ai";
+import { createAssistantMessageEventStream } from "@odinlabs-ai/pi-ai";
+import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.ts";
+import { AuthStorage } from "../src/core/auth-storage.ts";
+import { ModelRegistry } from "../src/core/model-registry.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
+import type { Settings } from "../src/core/settings-manager.ts";
+import { SettingsManager } from "../src/core/settings-manager.ts";
+import type { ExtensionFactory, ResourceLoader } from "../src/index.ts";
 import {
 	type CreateTestExtensionsResultInput,
 	createTestExtensionsResult,
 	createTestResourceLoader,
-} from "./utilities.js";
+} from "./utilities.ts";
 
 // ============================================================================
 // Faux model

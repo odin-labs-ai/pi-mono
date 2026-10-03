@@ -1,12 +1,12 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Container, type Terminal, Text, TUI } from "@mariozechner/pi-tui";
+import { Container, type Terminal, Text, TUI } from "@odinlabs-ai/pi-tui";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createEditToolDefinition } from "../src/core/tools/edit.js";
-import { computeEditsDiff, type Edit } from "../src/core/tools/edit-diff.js";
-import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { createEditToolDefinition } from "../src/core/tools/edit.ts";
+import { computeEditsDiff, type Edit } from "../src/core/tools/edit-diff.ts";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
 class FakeTerminal implements Terminal {
 	columns = 80;
@@ -27,6 +27,7 @@ class FakeTerminal implements Terminal {
 	clearFromCursor(): void {}
 	clearScreen(): void {}
 	setTitle(_title: string): void {}
+	setProgress(_active: boolean): void {}
 
 	get fullClearCount(): number {
 		return this.writes.filter((write) => write.includes("\x1b[2J\x1b[H\x1b[3J")).length;

@@ -1,13 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const require = createRequire(import.meta.url);
-const tsxLoader = require.resolve("tsx/esm");
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const aiEntryUrl = new URL("../src/index.ts", import.meta.url).href;
+const baseEntryUrl = new URL("../src/base.ts", import.meta.url).href;
 
 const SDK_SPECIFIERS = [
 	"@anthropic-ai/sdk",
@@ -19,9 +17,10 @@ const SDK_SPECIFIERS = [
 
 type ProbeResult = {
 	loadedSpecifiers: string[];
+	value?: unknown;
 };
 
-function runProbe(action: string): ProbeResult {
+function runProbe(action: string, entryUrl = aiEntryUrl): ProbeResult {
 	const script = `
 		import { registerHooks } from "node:module";
 
@@ -37,12 +36,14 @@ function runProbe(action: string): ProbeResult {
 			},
 		});
 
-		const mod = await import(${JSON.stringify(aiEntryUrl)});
-		${action}
-		console.log(JSON.stringify({ loadedSpecifiers: [...new Set(loaded)] }));
+		const mod = await import(${JSON.stringify(entryUrl)});
+		const value = await (async () => {
+			${action}
+		})();
+		console.log(JSON.stringify({ loadedSpecifiers: [...new Set(loaded)], value }));
 	`;
 
-	const result = spawnSync(process.execPath, ["--import", tsxLoader, "--input-type=module", "--eval", script], {
+	const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
 		cwd: packageRoot,
 		encoding: "utf8",
 	});
@@ -69,10 +70,37 @@ describe("lazy provider module loading", () => {
 		expect(result.loadedSpecifiers).toEqual([]);
 	});
 
+	it("registers built-in transports when importing the root barrel", () => {
+		const result = runProbe(`return mod.getApiProviders().map((provider) => provider.api).sort();`);
+		expect(result.value).toEqual([
+			"anthropic-messages",
+			"azure-openai-responses",
+			"bedrock-converse-stream",
+			"google-generative-ai",
+			"google-vertex",
+			"mistral-conversations",
+			"openai-codex-responses",
+			"openai-completions",
+			"openai-responses",
+		]);
+	});
+
+	it("registers built-in image transports when importing the root barrel", () => {
+		const result = runProbe(`return mod.getImagesApiProvider("openrouter-images")?.api;`);
+		expect(result.loadedSpecifiers).toEqual([]);
+		expect(result.value).toBe("openrouter-images");
+	});
+
+	it("does not load provider SDKs or register transports when importing the base barrel", () => {
+		const result = runProbe(`return mod.getApiProviders().map((provider) => provider.api);`, baseEntryUrl);
+		expect(result.loadedSpecifiers).toEqual([]);
+		expect(result.value).toEqual([]);
+	});
+
 	it("loads only the Anthropic SDK when calling the root lazy wrapper", () => {
 		const result = runProbe(`
 			const model = {
-				id: "claude-sonnet-4-20250514",
+				id: "claude-sonnet-4-6",
 				name: "Claude Sonnet 4",
 				api: "anthropic-messages",
 				provider: "anthropic",
@@ -92,11 +120,24 @@ describe("lazy provider module loading", () => {
 
 	it("loads only the Anthropic SDK when dispatching through streamSimple", () => {
 		const result = runProbe(`
-			const model = mod.getModel("anthropic", "claude-sonnet-4-20250514");
+			const model = mod.getModel("anthropic", "claude-sonnet-4-6");
 			const context = { messages: [{ role: "user", content: "hi" }] };
 			await mod.streamSimple(model, context).result();
 		`);
 
 		expect(result.loadedSpecifiers).toEqual(["@anthropic-ai/sdk"]);
+	});
+
+	it("dispatches through a lazy wrapper again after resetting providers", () => {
+		const result = runProbe(`
+			const model = mod.getModel("anthropic", "claude-sonnet-4-6");
+			const context = { messages: [{ role: "user", content: "hi" }] };
+			await mod.streamSimple(model, context).result();
+			mod.resetApiProviders();
+			return (await mod.streamSimple(model, context).result()).stopReason;
+		`);
+
+		expect(result.loadedSpecifiers).toEqual(["@anthropic-ai/sdk"]);
+		expect(result.value).toBe("error");
 	});
 });

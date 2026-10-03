@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { SettingsManager } from "../src/core/settings-manager.ts";
 
 /**
  * Tests for the fix to a bug where external file changes to arrays were overwritten.
@@ -109,7 +109,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 			}),
 		);
 
-		const manager = SettingsManager.create(projectDir, agentDir);
+		const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 
 		const currentProjectSettings = JSON.parse(readFileSync(projectSettingsPath, "utf-8"));
 		currentProjectSettings.prompts = ["./new-prompt.md"];
@@ -132,7 +132,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 			}),
 		);
 
-		const manager = SettingsManager.create(projectDir, agentDir);
+		const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
 
 		const currentProjectSettings = JSON.parse(readFileSync(projectSettingsPath, "utf-8"));
 		currentProjectSettings.extensions = ["./external-extension.ts"];

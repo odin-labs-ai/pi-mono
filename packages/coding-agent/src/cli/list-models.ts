@@ -2,10 +2,11 @@
  * List available models with optional fuzzy search
  */
 
-import type { Api, Model } from "@mariozechner/pi-ai";
-import { fuzzyFilter } from "@mariozechner/pi-tui";
+import type { Api, Model } from "@odinlabs-ai/pi-ai";
+import { fuzzyFilter } from "@odinlabs-ai/pi-tui";
 import chalk from "chalk";
-import type { ModelRegistry } from "../core/model-registry.js";
+import { formatNoModelsAvailableMessage } from "../core/auth-guidance.ts";
+import type { ModelRegistry } from "../core/model-registry.ts";
 
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")
@@ -34,7 +35,7 @@ export async function listModels(modelRegistry: ModelRegistry, searchPattern?: s
 	const models = modelRegistry.getAvailable();
 
 	if (models.length === 0) {
-		console.log("No models available. Set API keys in environment variables.");
+		console.log(formatNoModelsAvailableMessage());
 		return;
 	}
 

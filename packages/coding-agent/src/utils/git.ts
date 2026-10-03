@@ -73,6 +73,68 @@ function splitRef(url: string): { repo: string; ref?: string } {
 	};
 }
 
+function decodeForValidation(value: string): string | null {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return null;
+	}
+}
+
+function hasUnsafeGitInstallPart(value: string, allowSlash: boolean): boolean {
+	const decoded = decodeForValidation(value);
+	if (decoded === null) {
+		return true;
+	}
+	const candidates = [value, decoded];
+	for (const candidate of candidates) {
+		let hasControlCharacter = false;
+		for (let index = 0; index < candidate.length; index += 1) {
+			const code = candidate.charCodeAt(index);
+			if (code < 32 || code === 127) {
+				hasControlCharacter = true;
+				break;
+			}
+		}
+		if (hasControlCharacter || candidate.includes("\\") || candidate.startsWith("/") || candidate.startsWith("-")) {
+			return true;
+		}
+		if (!allowSlash && candidate.includes("/")) {
+			return true;
+		}
+		if (candidate.split("/").includes("..")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function buildGitSource(args: { repo: string; host: string; path: string; ref?: string }): GitSource | null {
+	if (args.path.startsWith("/")) {
+		return null;
+	}
+	const normalizedPath = args.path.replace(/\.git$/, "").replace(/^\/+/, "");
+	if (!args.host || !normalizedPath || normalizedPath.split("/").length < 2) {
+		return null;
+	}
+	if (
+		hasUnsafeGitInstallPart(args.host, false) ||
+		hasUnsafeGitInstallPart(normalizedPath, true) ||
+		(args.ref !== undefined && hasUnsafeGitInstallPart(args.ref, true))
+	) {
+		return null;
+	}
+
+	return {
+		type: "git",
+		repo: args.repo,
+		host: args.host,
+		path: normalizedPath,
+		ref: args.ref,
+		pinned: Boolean(args.ref),
+	};
+}
+
 function parseGenericGitUrl(url: string): GitSource | null {
 	const { repo: repoWithoutRef, ref } = splitRef(url);
 	let repo = repoWithoutRef;
@@ -109,19 +171,7 @@ function parseGenericGitUrl(url: string): GitSource | null {
 		repo = `https://${repoWithoutRef}`;
 	}
 
-	const normalizedPath = path.replace(/\.git$/, "").replace(/^\/+/, "");
-	if (!host || !normalizedPath || normalizedPath.split("/").length < 2) {
-		return null;
-	}
-
-	return {
-		type: "git",
-		repo,
-		host,
-		path: normalizedPath,
-		ref,
-		pinned: Boolean(ref),
-	};
+	return buildGitSource({ repo, host, path, ref });
 }
 
 /**
@@ -157,14 +207,12 @@ export function parseGitUrl(source: string): GitSource | null {
 				!split.repo.startsWith("ssh://") &&
 				!split.repo.startsWith("git://") &&
 				!split.repo.startsWith("git@");
-			return {
-				type: "git",
+			return buildGitSource({
 				repo: useHttpsPrefix ? `https://${split.repo}` : split.repo,
 				host: info.domain || "",
-				path: `${info.user}/${info.project}`.replace(/\.git$/, ""),
+				path: `${info.user}/${info.project}`,
 				ref: info.committish || split.ref || undefined,
-				pinned: Boolean(info.committish || split.ref),
-			};
+			});
 		}
 	}
 
@@ -177,14 +225,12 @@ export function parseGitUrl(source: string): GitSource | null {
 			if (split.ref && info.project?.includes("@")) {
 				continue;
 			}
-			return {
-				type: "git",
+			return buildGitSource({
 				repo: `https://${split.repo}`,
 				host: info.domain || "",
-				path: `${info.user}/${info.project}`.replace(/\.git$/, ""),
+				path: `${info.user}/${info.project}`,
 				ref: info.committish || split.ref || undefined,
-				pinned: Boolean(info.committish || split.ref),
-			};
+			});
 		}
 	}
 

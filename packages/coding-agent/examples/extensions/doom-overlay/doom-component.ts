@@ -5,10 +5,10 @@
  * Height is calculated from width to maintain DOOM's aspect ratio.
  */
 
-import type { Component } from "@mariozechner/pi-tui";
-import { isKeyRelease, type TUI } from "@mariozechner/pi-tui";
-import type { DoomEngine } from "./doom-engine.js";
-import { DoomKeys, mapKeyToDoom } from "./doom-keys.js";
+import type { Component } from "@odinlabs-ai/pi-tui";
+import { isKeyRelease, type TUI } from "@odinlabs-ai/pi-tui";
+import type { DoomEngine } from "./doom-engine.ts";
+import { DoomKeys, mapKeyToDoom } from "./doom-keys.ts";
 
 function renderHalfBlock(
 	rgba: Uint8Array,

@@ -1,10 +1,13 @@
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { Container } from "@mariozechner/pi-tui";
+import { type AutocompleteProvider, CombinedAutocompleteProvider } from "@odinlabs-ai/pi-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
-import type { SourceInfo } from "../src/core/source-info.js";
-import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { type Component, Container, type Focusable, TUI } from "../../tui/src/tui.ts";
+import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
+import type { AutocompleteProviderFactory } from "../src/core/extensions/types.ts";
+import type { SourceInfo } from "../src/core/source-info.ts";
+import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
 function renderLastLine(container: Container, width = 120): string {
 	const last = container.children[container.children.length - 1];
@@ -14,6 +17,41 @@ function renderLastLine(container: Container, width = 120): string {
 
 function renderAll(container: Container, width = 120): string {
 	return container.children.flatMap((child) => child.render(width)).join("\n");
+}
+
+class TestFocusableComponent implements Component, Focusable {
+	focused = false;
+	inputs: string[] = [];
+	private readonly label: string;
+	private text = "";
+
+	constructor(label: string) {
+		this.label = label;
+	}
+
+	handleInput(data: string): void {
+		this.inputs.push(data);
+	}
+
+	getText(): string {
+		return this.text;
+	}
+
+	setText(text: string): void {
+		this.text = text;
+	}
+
+	render(): string[] {
+		return [this.label];
+	}
+
+	invalidate(): void {}
+}
+
+async function flushTui(tui: TUI, terminal: VirtualTerminal): Promise<void> {
+	tui.requestRender(true);
+	await Promise.resolve();
+	await terminal.waitForRender();
 }
 
 function normalizeRenderedOutput(container: Container, width = 220): string {
@@ -113,6 +151,13 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 		const fakeThis: any = {
 			session: { settingsManager },
 			settingsManager,
+			themeController: {
+				setThemeInstance: vi.fn(() => ({ success: true })),
+				setThemeName: vi.fn(() => {
+					fakeThis.ui.requestRender();
+					return { success: true };
+				}),
+			},
 			ui: { requestRender: vi.fn() },
 		};
 
@@ -120,6 +165,7 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 		const result = uiContext.setTheme("light");
 
 		expect(result.success).toBe(true);
+		expect(fakeThis.themeController.setThemeName).toHaveBeenCalledWith("light");
 		expect(settingsManager.setTheme).toHaveBeenCalledWith("light");
 		expect(currentTheme).toBe("light");
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
@@ -135,6 +181,10 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 		const fakeThis: any = {
 			session: { settingsManager },
 			settingsManager,
+			themeController: {
+				setThemeInstance: vi.fn(() => ({ success: true })),
+				setThemeName: vi.fn(() => ({ success: false, error: "Theme not found" })),
+			},
 			ui: { requestRender: vi.fn() },
 		};
 
@@ -142,8 +192,233 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 		const result = uiContext.setTheme("__missing_theme__");
 
 		expect(result.success).toBe(false);
+		expect(fakeThis.themeController.setThemeName).toHaveBeenCalledWith("__missing_theme__");
 		expect(settingsManager.setTheme).not.toHaveBeenCalled();
 		expect(fakeThis.ui.requestRender).not.toHaveBeenCalled();
+	});
+});
+
+describe("InteractiveMode.showExtensionCustom", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	test("overlay custom UI reclaims input after non-overlay custom UI closes", async () => {
+		const terminal = new VirtualTerminal(80, 24);
+		const ui = new TUI(terminal);
+		const editorContainer = new Container();
+		const editor = new TestFocusableComponent("EDITOR");
+		const palette = new TestFocusableComponent("PALETTE");
+		const overlay = new TestFocusableComponent("OVERLAY");
+		const replacement = new TestFocusableComponent("REPLACEMENT");
+		let closeOverlay: (value: string) => void = () => {
+			throw new Error("closeOverlay was not initialized");
+		};
+		let closeReplacement: (value: string) => void = () => {
+			throw new Error("closeReplacement was not initialized");
+		};
+		const fakeThis = {
+			editor,
+			editorContainer,
+			keybindings: {},
+			ui,
+		};
+		const showExtensionCustom = <T>(
+			factory: (tui: TUI, theme: unknown, keybindings: unknown, done: (result: T) => void) => Component,
+			options?: { overlay?: boolean },
+		): Promise<T> =>
+			(InteractiveMode as any).prototype.showExtensionCustom.call(fakeThis, factory, options) as Promise<T>;
+
+		editorContainer.addChild(editor);
+		ui.addChild(editorContainer);
+		ui.addChild(palette);
+		ui.setFocus(palette);
+		ui.start();
+		try {
+			const overlayPromise = showExtensionCustom<string>(
+				(_tui, _theme, _keybindings, done) => {
+					closeOverlay = done;
+					return overlay;
+				},
+				{ overlay: true },
+			);
+			await flushTui(ui, terminal);
+			expect(overlay.focused).toBe(true);
+
+			const replacementPromise = showExtensionCustom<string>((_tui, _theme, _keybindings, done) => {
+				closeReplacement = done;
+				return replacement;
+			});
+			await flushTui(ui, terminal);
+			expect(replacement.focused).toBe(true);
+
+			closeReplacement("done");
+			await replacementPromise;
+			await flushTui(ui, terminal);
+			terminal.sendInput("x");
+			await flushTui(ui, terminal);
+
+			expect(overlay.inputs).toEqual(["x"]);
+			expect(editor.inputs).toEqual([]);
+			expect(overlay.focused).toBe(true);
+
+			closeOverlay("closed");
+			await overlayPromise;
+		} finally {
+			ui.stop();
+		}
+	});
+});
+
+describe("InteractiveMode.createExtensionUIContext addAutocompleteProvider", () => {
+	test("stores wrapper factories and rebuilds autocomplete immediately", () => {
+		const wrapper: AutocompleteProviderFactory = (current) => current;
+		const fakeThis = {
+			autocompleteProviderWrappers: [] as AutocompleteProviderFactory[],
+			setupAutocompleteProvider: vi.fn(),
+		};
+
+		const uiContext = (InteractiveMode as any).prototype.createExtensionUIContext.call(fakeThis);
+		uiContext.addAutocompleteProvider(wrapper);
+
+		expect(fakeThis.autocompleteProviderWrappers).toEqual([wrapper]);
+		expect(fakeThis.setupAutocompleteProvider).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("InteractiveMode.setupAutocompleteProvider", () => {
+	test("stacks wrapper factories over a fresh base provider", () => {
+		const defaultEditor = { setAutocompleteProvider: vi.fn() };
+		const customEditor = { setAutocompleteProvider: vi.fn() };
+		const calls: string[] = [];
+
+		const wrap1: AutocompleteProviderFactory = (current): AutocompleteProvider => ({
+			async getSuggestions(lines, cursorLine, cursorCol, options) {
+				calls.push("getSuggestions:wrap1");
+				return current.getSuggestions(lines, cursorLine, cursorCol, options);
+			},
+			applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+				calls.push("applyCompletion:wrap1");
+				return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+			},
+			shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
+				calls.push("shouldTrigger:wrap1");
+				return current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true;
+			},
+		});
+		const wrap2: AutocompleteProviderFactory = (current): AutocompleteProvider => ({
+			async getSuggestions(lines, cursorLine, cursorCol, options) {
+				calls.push("getSuggestions:wrap2");
+				return current.getSuggestions(lines, cursorLine, cursorCol, options);
+			},
+			applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+				calls.push("applyCompletion:wrap2");
+				return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+			},
+			shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
+				calls.push("shouldTrigger:wrap2");
+				return current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true;
+			},
+		});
+
+		const fakeThis = {
+			createBaseAutocompleteProvider: () => new CombinedAutocompleteProvider([], "/tmp/project", undefined),
+			defaultEditor,
+			editor: customEditor,
+			autocompleteProviderWrappers: [wrap1, wrap2],
+		};
+
+		(InteractiveMode as any).prototype.setupAutocompleteProvider.call(fakeThis);
+
+		expect(defaultEditor.setAutocompleteProvider).toHaveBeenCalledTimes(1);
+		expect(customEditor.setAutocompleteProvider).toHaveBeenCalledTimes(1);
+		const provider = defaultEditor.setAutocompleteProvider.mock.calls[0]?.[0] as AutocompleteProvider;
+		expect(provider).toBe(customEditor.setAutocompleteProvider.mock.calls[0]?.[0]);
+		expect(provider.shouldTriggerFileCompletion?.(["foo"], 0, 3)).toBe(true);
+		expect(calls).toEqual(["shouldTrigger:wrap2", "shouldTrigger:wrap1"]);
+	});
+
+	test("merges triggerCharacters from wrapper factories", () => {
+		const defaultEditor = { setAutocompleteProvider: vi.fn() };
+		const customEditor = { setAutocompleteProvider: vi.fn() };
+		const passThrough =
+			(triggerCharacters: string[]): AutocompleteProviderFactory =>
+			(current) => ({
+				triggerCharacters,
+				getSuggestions: (lines, cursorLine, cursorCol, options) =>
+					current.getSuggestions(lines, cursorLine, cursorCol, options),
+				applyCompletion: (lines, cursorLine, cursorCol, item, prefix) =>
+					current.applyCompletion(lines, cursorLine, cursorCol, item, prefix),
+			});
+
+		const fakeThis = {
+			createBaseAutocompleteProvider: () => new CombinedAutocompleteProvider([], "/tmp/project", undefined),
+			defaultEditor,
+			editor: customEditor,
+			autocompleteProviderWrappers: [passThrough(["$"]), passThrough(["!"])],
+		};
+
+		(
+			InteractiveMode as unknown as {
+				prototype: { setupAutocompleteProvider: (this: typeof fakeThis) => void };
+			}
+		).prototype.setupAutocompleteProvider.call(fakeThis);
+
+		const provider = defaultEditor.setAutocompleteProvider.mock.calls[0]?.[0] as AutocompleteProvider;
+		expect(provider.triggerCharacters).toEqual(["$", "!"]);
+	});
+});
+
+describe("InteractiveMode.createBaseAutocompleteProvider", () => {
+	test("matches model command arguments across provider/model order", async () => {
+		type TestModel = { id: string; provider: string; name: string };
+		type FakeInteractiveMode = {
+			session: {
+				scopedModels: Array<{ model: TestModel }>;
+				modelRegistry: { getAvailable: () => TestModel[] };
+				promptTemplates: [];
+				extensionRunner: { getRegisteredCommands: () => [] };
+				resourceLoader: { getSkills: () => { skills: [] } };
+			};
+			settingsManager: { getEnableSkillCommands: () => boolean };
+			skillCommands: Map<string, string>;
+			sessionManager: { getCwd: () => string };
+			fdPath: null;
+		};
+
+		const createBaseAutocompleteProvider = (
+			InteractiveMode as unknown as {
+				prototype: { createBaseAutocompleteProvider(this: FakeInteractiveMode): AutocompleteProvider };
+			}
+		).prototype.createBaseAutocompleteProvider;
+		const models = [
+			{ id: "gpt-5.2-codex", provider: "github-copilot", name: "GPT-5.2 Codex" },
+			{ id: "gpt-5.5", provider: "openai-codex", name: "GPT-5.5" },
+		];
+		const fakeThis: FakeInteractiveMode = {
+			session: {
+				scopedModels: [],
+				modelRegistry: { getAvailable: () => models },
+				promptTemplates: [],
+				extensionRunner: { getRegisteredCommands: () => [] },
+				resourceLoader: { getSkills: () => ({ skills: [] }) },
+			},
+			settingsManager: { getEnableSkillCommands: () => false },
+			skillCommands: new Map(),
+			sessionManager: { getCwd: () => "/tmp" },
+			fdPath: null,
+		};
+
+		const provider = createBaseAutocompleteProvider.call(fakeThis);
+		const line = "/model codexgpt";
+		const suggestions = await provider.getSuggestions([line], 0, line.length, {
+			signal: new AbortController().signal,
+		});
+
+		expect(suggestions?.items.map((item) => item.value)).toEqual([
+			"openai-codex/gpt-5.5",
+			"github-copilot/gpt-5.2-codex",
+		]);
 	});
 });
 
@@ -175,7 +450,10 @@ describe("InteractiveMode.showLoadedResources", () => {
 			},
 			session: {
 				promptTemplates: [],
-				extensionRunner: undefined,
+				extensionRunner: {
+					getCommandDiagnostics: () => [],
+					getShortcutDiagnostics: () => [],
+				},
 				resourceLoader: {
 					getPathMetadata: () => new Map(),
 					getAgentsFiles: () => ({ agentsFiles: options.contextFiles ?? [] }),
@@ -189,6 +467,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 				},
 			},
 			formatDisplayPath: (p: string) => (InteractiveMode as any).prototype.formatDisplayPath.call(fakeThis, p),
+			formatExtensionDisplayPath: (p: string) =>
+				(InteractiveMode as any).prototype.formatExtensionDisplayPath.call(fakeThis, p),
 			formatContextPath: (p: string) => (InteractiveMode as any).prototype.formatContextPath.call(fakeThis, p),
 			getStartupExpansionState: () => (InteractiveMode as any).prototype.getStartupExpansionState.call(fakeThis),
 			buildScopeGroups: () => [],
@@ -409,7 +689,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
 "[Extensions]
-  @scope/pi-scoped, answer.ts, cli-extension.ts, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index/index.ts, pi-markdown-preview, user-index/index.ts"`);
+  @scope/pi-scoped, answer.ts, cli-extension.ts, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, pi-markdown-preview, user-index"`);
 	});
 
 	test("adds more parent folders until local extension labels are unique", () => {
@@ -455,9 +735,231 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
 "[Extensions]
-  alpha/one/index.ts, beta/one/index.ts, gamma/one/index.ts"`);
+  alpha/one, beta/one, gamma/one"`);
 	});
 
+	test("strips index.ts from local extension label, showing parent dir", () => {
+		const extensions: ExtensionFixture[] = [
+			{
+				path: "/tmp/extensions/plan-mode/index.ts",
+				sourceInfo: createSourceInfo("/tmp/extensions/plan-mode/index.ts", {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: "/tmp/extensions",
+				}),
+			},
+		];
+
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			extensions,
+			useRealScopeGroups: true,
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
+"[Extensions]
+  plan-mode"`);
+	});
+
+	test("strips index.js from local extension label, showing parent dir", () => {
+		const extensions: ExtensionFixture[] = [
+			{
+				path: "/tmp/extensions/plan-mode/index.js",
+				sourceInfo: createSourceInfo("/tmp/extensions/plan-mode/index.js", {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: "/tmp/extensions",
+				}),
+			},
+		];
+
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			extensions,
+			useRealScopeGroups: true,
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
+"[Extensions]
+  plan-mode"`);
+	});
+
+	test("mixed single-file and subdirectory index.ts extensions strip index.ts", () => {
+		const extensions: ExtensionFixture[] = [
+			{
+				path: "/tmp/extensions/webfetch.ts",
+				sourceInfo: createSourceInfo("/tmp/extensions/webfetch.ts", {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: "/tmp/extensions",
+				}),
+			},
+			{
+				path: "/tmp/extensions/plan-mode/index.ts",
+				sourceInfo: createSourceInfo("/tmp/extensions/plan-mode/index.ts", {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: "/tmp/extensions",
+				}),
+			},
+		];
+
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			extensions,
+			useRealScopeGroups: true,
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
+"[Extensions]
+  plan-mode, webfetch.ts"`);
+	});
+
+	test("multiple index.ts with unique parent dirs need no disambiguation", () => {
+		const extensions: ExtensionFixture[] = [
+			{
+				path: "/tmp/extensions/foo/index.ts",
+				sourceInfo: createSourceInfo("/tmp/extensions/foo/index.ts", {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: "/tmp/extensions",
+				}),
+			},
+			{
+				path: "/tmp/extensions/bar/index.ts",
+				sourceInfo: createSourceInfo("/tmp/extensions/bar/index.ts", {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: "/tmp/extensions",
+				}),
+			},
+		];
+
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			extensions,
+			useRealScopeGroups: true,
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
+"[Extensions]
+  bar, foo"`);
+	});
+
+	test("multiple index.ts with same parent dir name disambiguated with grandparent", () => {
+		const extensions: ExtensionFixture[] = [
+			{
+				path: "/tmp/alpha/tools/index.ts",
+				sourceInfo: createSourceInfo("/tmp/alpha/tools/index.ts", {
+					source: "cli",
+					scope: "temporary",
+					origin: "top-level",
+					baseDir: "/tmp/alpha",
+				}),
+			},
+			{
+				path: "/tmp/beta/tools/index.ts",
+				sourceInfo: createSourceInfo("/tmp/beta/tools/index.ts", {
+					source: "cli",
+					scope: "temporary",
+					origin: "top-level",
+					baseDir: "/tmp/beta",
+				}),
+			},
+		];
+
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			extensions,
+			useRealScopeGroups: true,
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
+"[Extensions]
+  alpha/tools, beta/tools"`);
+	});
+
+	test("non-index file in subdirectory stays as filename", () => {
+		const extensions: ExtensionFixture[] = [
+			{
+				path: "/tmp/extensions/my-ext/main.ts",
+				sourceInfo: createSourceInfo("/tmp/extensions/my-ext/main.ts", {
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+					baseDir: "/tmp/extensions",
+				}),
+			},
+		];
+
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			extensions,
+			useRealScopeGroups: true,
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
+"[Extensions]
+  main.ts"`);
+	});
+
+	test("package extensions still strip index.ts correctly (regression guard)", () => {
+		const extensions: ExtensionFixture[] = [
+			{
+				path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts",
+				sourceInfo: createSourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts", {
+					source: "npm:pi-markdown-preview",
+					scope: "project",
+					origin: "package",
+					baseDir: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview",
+				}),
+			},
+		];
+
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			extensions,
+			useRealScopeGroups: true,
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
+"[Extensions]
+  pi-markdown-preview"`);
+	});
 	test("captures mixed extension layouts in expanded output", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
@@ -474,16 +976,16 @@ describe("InteractiveMode.showLoadedResources", () => {
 "[Extensions]
   project
     /tmp/project/.pi/extensions/answer.ts
-    /tmp/project/.pi/extensions/local-index/index.ts
+    /tmp/project/.pi/extensions/local-index
     git:github.com/HazAT/pi-interactive-subagents
-      extensions/index.ts
-      extensions/subagents/index.ts
+      extensions
+      extensions/subagents
     npm:@scope/pi-scoped
-      extensions/index.ts
+      extensions
     npm:pi-markdown-preview
-      extensions/index.ts
+      extensions
   user
-    /tmp/agent/extensions/user-index/index.ts
+    /tmp/agent/extensions/user-index
   path
     /tmp/temp/cli-extension.ts"`);
 	});

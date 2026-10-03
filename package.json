@@ -4,56 +4,67 @@
 	"type": "module",
 	"workspaces": [
 		"packages/*",
-		"packages/web-ui/example",
 		"packages/coding-agent/examples/extensions/with-deps",
 		"packages/coding-agent/examples/extensions/custom-provider-anthropic",
 		"packages/coding-agent/examples/extensions/custom-provider-gitlab-duo",
-		"packages/coding-agent/examples/extensions/custom-provider-qwen-cli"
+		"packages/coding-agent/examples/extensions/sandbox"
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
-		"build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build && cd ../mom && npm run build && cd ../web-ui && npm run build && cd ../pods && npm run build",
-		"dev": "concurrently --names \"ai,agent,coding-agent,mom,web-ui,tui\" --prefix-colors \"cyan,yellow,red,white,green,magenta\" \"cd packages/ai && npm run dev\" \"cd packages/agent && npm run dev\" \"cd packages/coding-agent && npm run dev\" \"cd packages/mom && npm run dev\" \"cd packages/web-ui && npm run dev\" \"cd packages/tui && npm run dev\"",
-		"dev:tsc": "concurrently --names \"ai,web-ui\" --prefix-colors \"cyan,green\" \"cd packages/ai && npm run dev:tsc\" \"cd packages/web-ui && npm run dev:tsc\"",
-		"check": "biome check --write --error-on-warnings . && npm run check:model-generation && tsgo --noEmit && npm run check:browser-smoke && cd packages/web-ui && npm run check",
+		"build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build",
+		"check": "biome check --write --error-on-warnings . && npm run check:pinned-deps && npm run check:model-generation && npm run check:package-files && npm run check:release-versioning && npm run check:ts-imports && npm run check:shrinkwrap && tsgo --noEmit && npm run check:browser-smoke",
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
 		"check:model-generation": "node --test scripts/model-generation-contract.test.mjs",
+		"check:package-files": "node --test scripts/package-files.test.mjs",
+		"check:pinned-deps": "node scripts/check-pinned-deps.mjs",
+		"check:release-versioning": "node --test scripts/odin-version.test.mjs scripts/release-contract.test.mjs",
+		"check:shrinkwrap": "node scripts/generate-coding-agent-shrinkwrap.mjs --check",
+		"check:ts-imports": "node scripts/check-ts-relative-imports.mjs",
 		"profile:tui": "node scripts/profile-coding-agent-node.mjs --mode tui",
 		"profile:rpc": "node scripts/profile-coding-agent-node.mjs --mode rpc",
 		"test": "npm run test --workspaces --if-present",
-		"version:patch": "npm version patch -ws --no-git-tag-version && node scripts/sync-versions.js && shx rm -rf node_modules packages/*/node_modules package-lock.json && npm install",
-		"version:minor": "npm version minor -ws --no-git-tag-version && node scripts/sync-versions.js && shx rm -rf node_modules packages/*/node_modules package-lock.json && npm install",
-		"version:major": "npm version major -ws --no-git-tag-version && node scripts/sync-versions.js && shx rm -rf node_modules packages/*/node_modules package-lock.json && npm install",
-		"version:set": "npm version -ws",
+		"version:patch": "node scripts/version.mjs patch",
+		"version:minor": "node scripts/version.mjs minor",
+		"version:set": "node scripts/version.mjs",
 		"prepublishOnly": "npm run clean && npm run build && npm run check",
-		"publish": "npm run prepublishOnly && npm publish -ws --access public",
-		"publish:dry": "npm run prepublishOnly && npm publish -ws --access public --dry-run",
+		"publish": "npm run prepublishOnly && node scripts/publish.mjs",
+		"publish:dry": "npm run prepublishOnly && node scripts/publish.mjs --dry-run",
+		"release:local": "node scripts/local-release.mjs",
+		"shrinkwrap:coding-agent": "node scripts/generate-coding-agent-shrinkwrap.mjs",
+		"release:check": "node scripts/release.mjs current --dry-run",
+		"release:current": "node scripts/release.mjs current",
 		"release:patch": "node scripts/release.mjs patch",
 		"release:minor": "node scripts/release.mjs minor",
-		"release:major": "node scripts/release.mjs major",
+		"release:fix-links": "node scripts/release-notes.mjs fix-github-releases",
 		"prepare": "husky"
 	},
 	"devDependencies": {
+		"@anthropic-ai/sandbox-runtime": "0.0.26",
 		"@biomejs/biome": "2.3.5",
-		"@types/node": "^22.10.5",
+		"@types/node": "22.19.19",
 		"@typescript/native-preview": "7.0.0-dev.20260120.1",
-		"concurrently": "^9.2.1",
-		"husky": "^9.1.7",
-		"tsx": "^4.20.3",
-		"typescript": "^5.9.2",
-		"shx": "^0.4.0"
+		"brace-expansion": "5.0.12",
+		"esbuild": "0.28.1",
+		"husky": "9.1.7",
+		"jiti": "2.7.0",
+		"minimatch": "10.2.6",
+		"protobufjs": "7.6.6",
+		"semver": "7.8.0",
+		"tsx": "4.22.1",
+		"typescript": "5.9.3",
+		"undici": "8.10.2"
 	},
 	"engines": {
-		"node": ">=20.0.0"
+		"node": ">=22.19.0"
 	},
 	"version": "0.0.3",
-	"dependencies": {
-		"@mariozechner/jiti": "^2.6.5",
-		"@mariozechner/pi-coding-agent": "^0.30.2",
-		"get-east-asian-width": "^1.4.0"
-	},
 	"overrides": {
+		"brace-expansion": "5.0.12",
+		"nanoid": "3.3.18",
+		"postcss": "8.5.28",
+		"protobufjs": "7.6.6",
 		"rimraf": "6.1.2",
+		"shell-quote": "1.12.0",
 		"gaxios": {
 			"rimraf": "6.1.2"
 		}

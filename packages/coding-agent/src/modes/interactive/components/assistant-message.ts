@@ -1,6 +1,6 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
-import { getMarkdownTheme, theme } from "../theme/theme.js";
+import type { AssistantMessage } from "@odinlabs-ai/pi-ai";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@odinlabs-ai/pi-tui";
+import { getMarkdownTheme, theme } from "../theme/theme.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
