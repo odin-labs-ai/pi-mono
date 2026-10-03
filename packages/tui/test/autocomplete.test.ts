@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it, test } from "node:test";
-import { CombinedAutocompleteProvider } from "../src/autocomplete.ts";
+import { buildFdPathQuery, CombinedAutocompleteProvider } from "../src/autocomplete.ts";
 
 const resolveFdPath = (): string | null => {
 	const command = process.platform === "win32" ? "where" : "which";
@@ -55,6 +55,11 @@ const getSuggestions = (
 ) => provider.getSuggestions(lines, cursorLine, cursorCol, { signal: new AbortController().signal, force });
 
 describe("CombinedAutocompleteProvider", () => {
+	it("builds slash-heavy path queries within a linear-time budget", { timeout: 1_000 }, () => {
+		const query = `x${"/".repeat(40_000)}y`;
+		assert.strictEqual(buildFdPathQuery(query), "x[\\\\/]y");
+	});
+
 	describe("extractPathPrefix", () => {
 		it("extracts / from 'hey /' when forced", async () => {
 			const provider = new CombinedAutocompleteProvider([], "/tmp");

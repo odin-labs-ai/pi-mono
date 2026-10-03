@@ -14,14 +14,18 @@ function escapeRegex(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function buildFdPathQuery(query: string): string {
+export function buildFdPathQuery(query: string): string {
 	const normalized = toDisplayPath(query);
 	if (!normalized.includes("/")) {
 		return normalized;
 	}
 
 	const hasTrailingSeparator = normalized.endsWith("/");
-	const trimmed = normalized.replace(/^\/+|\/+$/g, "");
+	let start = 0;
+	while (start < normalized.length && normalized.charCodeAt(start) === 47) start += 1;
+	let end = normalized.length;
+	while (end > start && normalized.charCodeAt(end - 1) === 47) end -= 1;
+	const trimmed = normalized.slice(start, end);
 	if (!trimmed) {
 		return normalized;
 	}

@@ -168,7 +168,8 @@ function normalizePathPart(value) {
 }
 
 function normalizeBasePath(basePath) {
-	const normalized = path.posix.normalize(normalizePathPart(basePath)).replace(/\/+$/, "");
+	let normalized = path.posix.normalize(normalizePathPart(basePath));
+	while (normalized.endsWith("/")) normalized = normalized.slice(0, -1);
 	return normalized === "." ? "" : normalized;
 }
 

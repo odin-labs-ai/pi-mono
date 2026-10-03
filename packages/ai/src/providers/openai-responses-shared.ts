@@ -100,7 +100,9 @@ export function convertResponsesMessages<TApi extends Api>(
 	const normalizeIdPart = (part: string): string => {
 		const sanitized = part.replace(/[^a-zA-Z0-9_-]/g, "_");
 		const normalized = sanitized.length > 64 ? sanitized.slice(0, 64) : sanitized;
-		return normalized.replace(/_+$/, "");
+		let end = normalized.length;
+		while (end > 0 && normalized.charCodeAt(end - 1) === 95) end -= 1;
+		return normalized.slice(0, end);
 	};
 
 	const buildForeignResponsesItemId = (itemId: string): string => {
