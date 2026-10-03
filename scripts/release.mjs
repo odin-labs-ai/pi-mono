@@ -219,9 +219,8 @@ console.log("Updating CHANGELOG.md files...");
 updateChangelogsForRelease(version);
 console.log();
 
-// 4. Regenerate release artifacts
+// 4. Regenerate deterministic release artifacts
 console.log("Regenerating release artifacts...");
-run("npm --prefix packages/ai run refresh-models");
 run("npm run shrinkwrap:coding-agent");
 console.log();
 

@@ -12,8 +12,9 @@
 	"scripts": {
 		"clean": "npm run clean --workspaces",
 		"build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build",
-		"check": "biome check --write --error-on-warnings . && npm run check:pinned-deps && npm run check:package-files && npm run check:release-versioning && npm run check:ts-imports && npm run check:shrinkwrap && tsgo --noEmit && npm run check:browser-smoke",
+		"check": "biome check --write --error-on-warnings . && npm run check:pinned-deps && npm run check:model-generation && npm run check:package-files && npm run check:release-versioning && npm run check:ts-imports && npm run check:shrinkwrap && tsgo --noEmit && npm run check:browser-smoke",
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
+		"check:model-generation": "node --test scripts/model-generation-contract.test.mjs",
 		"check:package-files": "node --test scripts/package-files.test.mjs",
 		"check:pinned-deps": "node scripts/check-pinned-deps.mjs",
 		"check:release-versioning": "node --test scripts/odin-version.test.mjs scripts/release-contract.test.mjs",
