@@ -290,7 +290,7 @@ export function validateToolCall(tools: Tool[], toolCall: ToolCall): any {
  * @throws Error with formatted message if validation fails
  */
 export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
-	const args = structuredClone(toolCall.arguments);
+	let args: unknown = structuredClone(toolCall.arguments);
 	Value.Convert(tool.parameters, args);
 
 	const validator = getValidator(tool.parameters);
@@ -303,7 +303,7 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 				}
 				Object.assign(args, coerced);
 			} else {
-				return validator.Check(coerced) ? coerced : args;
+				args = coerced;
 			}
 		}
 	}

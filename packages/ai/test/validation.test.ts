@@ -113,4 +113,20 @@ describe("validateToolArguments", () => {
 			expect(() => validateToolArguments(tool, toolCall)).toThrow("Validation failed");
 		}
 	});
+
+	it("does not return the original value when a top-level coercion remains invalid", () => {
+		const tool: Tool = {
+			name: "integer",
+			description: "Integer tool",
+			parameters: { type: "integer" } as Tool["parameters"],
+		};
+		const toolCall: ToolCall = {
+			type: "toolCall",
+			id: "tool-1",
+			name: "integer",
+			arguments: "42.1" as unknown as Record<string, unknown>,
+		};
+
+		expect(() => validateToolArguments(tool, toolCall)).toThrow("Validation failed");
+	});
 });

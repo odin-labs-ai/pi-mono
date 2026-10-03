@@ -421,9 +421,7 @@ describe("OpenAI Codex OAuth", () => {
 			loginOpenAICodexDeviceCode({
 				onDeviceCode: () => {},
 			}),
-		).rejects.toThrow(
-			'OpenAI Codex device auth failed with status 500: {"error":"server_error","error_description":"try again later"}',
-		);
+		).rejects.toThrow("OpenAI Codex device auth failed with status 500");
 	});
 
 	it("does not write token refresh failures to stderr", async () => {
@@ -443,9 +441,12 @@ describe("OpenAI Codex OAuth", () => {
 			}),
 		);
 
-		await expect(refreshOpenAICodexToken("invalid-refresh-token")).rejects.toThrow(
-			/OpenAI Codex token refresh failed \(401\).*Could not validate your token/,
-		);
+		const failure = refreshOpenAICodexToken("invalid-refresh-token");
+		await expect(failure).rejects.toThrow("OpenAI Codex token refresh failed (401 Unauthorized)");
+		await failure.catch((error: unknown) => {
+			expect(String(error)).not.toContain("Could not validate your token");
+			expect(String(error)).not.toContain("invalid-refresh-token");
+		});
 		expect(consoleError).not.toHaveBeenCalled();
 	});
 });
