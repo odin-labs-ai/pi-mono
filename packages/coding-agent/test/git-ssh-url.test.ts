@@ -70,6 +70,11 @@ describe("Git URL Parsing", () => {
 			"git:git@evil.example:/absolute/repo",
 			"git:git@evil.example:user\\repo/name",
 			"git:git@evil.example:user/repo\0name",
+			"git:-evil.example/user/repo",
+			"git:git@evil.example:-owner/repo",
+			"https://evil.example/owner/repo@--upload-pack=payload",
+			"https://evil.example/owner/repo@%2D%2Dupload-pack%3Dpayload",
+			"git:git@evil.example:owner/repo@-c=core.sshCommand=payload",
 		]) {
 			expect(parseGitUrl(source)).toBeNull();
 		}

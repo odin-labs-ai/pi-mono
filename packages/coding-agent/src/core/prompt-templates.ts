@@ -68,36 +68,67 @@ export function parseCommandArgs(argsString: string): string[] {
  */
 export function substituteArgs(content: string, args: string[]): string {
 	const allArgs = args.join(" ");
+	let result = "";
+	let cursor = 0;
+	while (cursor < content.length) {
+		const dollar = content.indexOf("$", cursor);
+		if (dollar < 0) return result + content.slice(cursor);
+		result += content.slice(cursor, dollar);
 
-	return content.replace(
-		/\$\{(\d+):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)/g,
-		(_match, defaultNum, defaultValue, sliceStart, sliceLength, simple) => {
-			if (defaultNum) {
-				const index = parseInt(defaultNum, 10) - 1;
-				const value = args[index];
-				return value ? value : defaultValue;
-			}
+		if (content.startsWith("$ARGUMENTS", dollar)) {
+			result += allArgs;
+			cursor = dollar + "$ARGUMENTS".length;
+			continue;
+		}
+		if (content.startsWith("$@", dollar)) {
+			result += allArgs;
+			cursor = dollar + 2;
+			continue;
+		}
 
-			if (sliceStart) {
-				let start = parseInt(sliceStart, 10) - 1; // Convert to 0-indexed (user provides 1-indexed)
-				// Treat 0 as 1 (bash convention: args start at 1)
-				if (start < 0) start = 0;
+		let digitEnd = dollar + 1;
+		while (digitEnd < content.length && content.charCodeAt(digitEnd) >= 48 && content.charCodeAt(digitEnd) <= 57) {
+			digitEnd += 1;
+		}
+		if (digitEnd > dollar + 1) {
+			result += args[Number(content.slice(dollar + 1, digitEnd)) - 1] ?? "";
+			cursor = digitEnd;
+			continue;
+		}
 
-				if (sliceLength) {
-					const length = parseInt(sliceLength, 10);
-					return args.slice(start, start + length).join(" ");
+		if (content.startsWith("${", dollar)) {
+			const close = content.indexOf("}", dollar + 2);
+			if (close >= 0) {
+				const expression = content.slice(dollar + 2, close);
+				const defaultSeparator = expression.indexOf(":-");
+				if (defaultSeparator > 0 && /^\d+$/.test(expression.slice(0, defaultSeparator))) {
+					const index = Number(expression.slice(0, defaultSeparator)) - 1;
+					result += args[index] || expression.slice(defaultSeparator + 2);
+					cursor = close + 1;
+					continue;
 				}
-				return args.slice(start).join(" ");
+				if (expression.startsWith("@:")) {
+					const [startText, lengthText, ...extra] = expression.slice(2).split(":");
+					if (
+						extra.length === 0 &&
+						/^\d+$/.test(startText ?? "") &&
+						(lengthText === undefined || /^\d+$/.test(lengthText))
+					) {
+						const start = Math.max(0, Number(startText) - 1);
+						const selected =
+							lengthText === undefined ? args.slice(start) : args.slice(start, start + Number(lengthText));
+						result += selected.join(" ");
+						cursor = close + 1;
+						continue;
+					}
+				}
 			}
+		}
 
-			if (simple === "ARGUMENTS" || simple === "@") {
-				return allArgs;
-			}
-
-			const index = parseInt(simple, 10) - 1;
-			return args[index] ?? "";
-		},
-	);
+		result += "$";
+		cursor = dollar + 1;
+	}
+	return result;
 }
 
 function loadTemplateFromFile(filePath: string, sourceInfo: SourceInfo): PromptTemplate | null {

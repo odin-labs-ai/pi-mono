@@ -497,9 +497,8 @@ describe("Markdown component", () => {
 
 			// Strip box drawing characters + whitespace so we can assert the URL is preserved
 			// even if it was split across multiple wrapped lines.
-			const extracted = plainLines.join("").replace(/[│├┤─\s]/g, "");
-			assert.ok(extracted.includes("prefix"), "Should preserve 'prefix'");
-			assert.ok(extracted.includes(url), "Should preserve URL");
+			const extracted = plainLines.join("").replace(/[│├┤─┌┐└┘\s]/g, "");
+			assert.strictEqual(extracted, `Valueprefix${url}`);
 		});
 
 		it("should wrap styled inline code inside table cells without breaking borders", () => {

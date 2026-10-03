@@ -183,7 +183,8 @@ export function register(): void {
 }
 
 function normalizeAzureBaseUrl(baseUrl: string): string {
-	const trimmed = baseUrl.trim().replace(/\/+$/, "");
+	let trimmed = baseUrl.trim();
+	while (trimmed.endsWith("/")) trimmed = trimmed.slice(0, -1);
 	let url: URL;
 	try {
 		url = new URL(trimmed);
@@ -193,7 +194,8 @@ function normalizeAzureBaseUrl(baseUrl: string): string {
 
 	const isAzureHost =
 		url.hostname.endsWith(".openai.azure.com") || url.hostname.endsWith(".cognitiveservices.azure.com");
-	const normalizedPath = url.pathname.replace(/\/+$/, "");
+	let normalizedPath = url.pathname;
+	while (normalizedPath.endsWith("/")) normalizedPath = normalizedPath.slice(0, -1);
 
 	// Ensure Azure hosts have /openai/v1 as base path so the AzureOpenAI SDK
 	// can append /deployments/<model>/... and ?api-version=v1 correctly.

@@ -32,7 +32,13 @@ describe("AuthStorage", () => {
 	}
 
 	function toShPath(value: string): string {
-		return value.replace(/\\/g, "/").replace(/"/g, '\\"');
+		const normalized = value.split("\\").join("/");
+		for (const char of normalized) {
+			const code = char.charCodeAt(0);
+			const isAlphaNumeric = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+			if (!isAlphaNumeric && !"/_.:-".includes(char)) throw new Error(`Unsafe test path: ${value}`);
+		}
+		return normalized;
 	}
 
 	describe("API key resolution", () => {

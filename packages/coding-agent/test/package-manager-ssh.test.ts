@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultPackageManager } from "../src/core/package-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
@@ -68,6 +68,32 @@ describe("Package Manager git source parsing", () => {
 			expect(parsed.type).toBe("git");
 			expect(parsed.ref).toBe("v1.0.0");
 			expect(parsed.pinned).toBe(true);
+		});
+
+		it("should reject option-like refs instead of treating them as local paths", () => {
+			for (const source of [
+				"git:github.com/user/repo@--upload-pack=payload",
+				"git:github.com/user/repo@%2D%2Dupload-pack%3Dpayload",
+				"git:git@github.com:user/repo@-c=core.sshCommand=payload",
+			]) {
+				expect(() => (packageManager as any).parseSource(source)).toThrow("Invalid git source");
+			}
+		});
+
+		it("separates validated clone and ref operands from git options", async () => {
+			const source = (packageManager as any).parseSource("git:github.com/user/repo@v1.2.3");
+			const runCommand = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
+
+			await (packageManager as any).installGit(source, "temporary");
+
+			expect(runCommand.mock.calls[0]?.[0]).toBe("git");
+			expect(runCommand.mock.calls[0]?.[1]).toEqual([
+				"clone",
+				"--",
+				"https://github.com/user/repo",
+				expect.stringContaining("/user/repo"),
+			]);
+			expect(runCommand.mock.calls[1]?.[1]).toEqual(["checkout", "--detach", "v1.2.3", "--"]);
 		});
 	});
 

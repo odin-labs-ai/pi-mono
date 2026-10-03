@@ -38,6 +38,7 @@ import { parseFinalToolArguments, parseStreamingJson } from "../utils/json-parse
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { resolveStreamIdleTimeoutMs, withStreamIdleTimeout } from "../utils/stream-idle.ts";
+import { urlHostnameMatches } from "../utils/url-host.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
@@ -560,7 +561,7 @@ function buildParams(
 		messages,
 		stream: true,
 		prompt_cache_key:
-			(model.baseUrl.includes("api.openai.com") && cacheRetention !== "none") ||
+			(urlHostnameMatches(model.baseUrl, "api.openai.com") && cacheRetention !== "none") ||
 			(cacheRetention === "long" && compat.supportsLongCacheRetention)
 				? clampOpenAIPromptCacheKey(options?.sessionId)
 				: undefined,
@@ -688,7 +689,7 @@ function buildParams(
 	}
 
 	// Vercel AI Gateway provider routing preferences
-	if (model.baseUrl.includes("ai-gateway.vercel.sh") && model.compat?.vercelGatewayRouting) {
+	if (urlHostnameMatches(model.baseUrl, "ai-gateway.vercel.sh") && model.compat?.vercelGatewayRouting) {
 		const routing = model.compat.vercelGatewayRouting;
 		if (routing.only || routing.order) {
 			const gatewayOptions: Record<string, string[]> = {};
@@ -1186,43 +1187,44 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"] | str
 function detectCompat(model: Model<"openai-completions">): ResolvedOpenAICompletionsCompat {
 	const provider = model.provider;
 	const baseUrl = model.baseUrl;
+	const matchesHost = (hostname: string) => urlHostnameMatches(baseUrl, hostname);
 
 	const isZai =
-		provider === "zai" ||
-		provider === "zai-coding-cn" ||
-		baseUrl.includes("api.z.ai") ||
-		baseUrl.includes("open.bigmodel.cn");
-	const isTogether =
-		provider === "together" || baseUrl.includes("api.together.ai") || baseUrl.includes("api.together.xyz");
-	const isMoonshot = provider === "moonshotai" || provider === "moonshotai-cn" || baseUrl.includes("api.moonshot.");
-	const isOpenRouter = provider === "openrouter" || baseUrl.includes("openrouter.ai");
-	const isCloudflareWorkersAI = provider === "cloudflare-workers-ai" || baseUrl.includes("api.cloudflare.com");
-	const isCloudflareAiGateway = provider === "cloudflare-ai-gateway" || baseUrl.includes("gateway.ai.cloudflare.com");
-	const isNvidia = provider === "nvidia" || baseUrl.includes("integrate.api.nvidia.com");
-	const isAntLing = provider === "ant-ling" || baseUrl.includes("api.ant-ling.com");
+		provider === "zai" || provider === "zai-coding-cn" || matchesHost("api.z.ai") || matchesHost("open.bigmodel.cn");
+	const isTogether = provider === "together" || matchesHost("api.together.ai") || matchesHost("api.together.xyz");
+	const isMoonshot =
+		provider === "moonshotai" ||
+		provider === "moonshotai-cn" ||
+		matchesHost("api.moonshot.ai") ||
+		matchesHost("api.moonshot.cn");
+	const isOpenRouter = provider === "openrouter" || matchesHost("openrouter.ai");
+	const isCloudflareWorkersAI = provider === "cloudflare-workers-ai" || matchesHost("api.cloudflare.com");
+	const isCloudflareAiGateway = provider === "cloudflare-ai-gateway" || matchesHost("gateway.ai.cloudflare.com");
+	const isNvidia = provider === "nvidia" || matchesHost("integrate.api.nvidia.com");
+	const isAntLing = provider === "ant-ling" || matchesHost("api.ant-ling.com");
 
 	const isNonStandard =
 		isNvidia ||
 		provider === "cerebras" ||
-		baseUrl.includes("cerebras.ai") ||
+		matchesHost("cerebras.ai") ||
 		provider === "xai" ||
-		baseUrl.includes("api.x.ai") ||
+		matchesHost("api.x.ai") ||
 		isTogether ||
-		baseUrl.includes("chutes.ai") ||
-		baseUrl.includes("deepseek.com") ||
+		matchesHost("chutes.ai") ||
+		matchesHost("deepseek.com") ||
 		isZai ||
 		isMoonshot ||
 		provider === "opencode" ||
-		baseUrl.includes("opencode.ai") ||
+		matchesHost("opencode.ai") ||
 		isCloudflareWorkersAI ||
 		isCloudflareAiGateway ||
 		isAntLing;
 
 	const useMaxTokens =
-		baseUrl.includes("chutes.ai") || isMoonshot || isCloudflareAiGateway || isTogether || isNvidia || isAntLing;
+		matchesHost("chutes.ai") || isMoonshot || isCloudflareAiGateway || isTogether || isNvidia || isAntLing;
 
-	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
-	const isDeepSeek = provider === "deepseek" || baseUrl.includes("deepseek.com");
+	const isGrok = provider === "xai" || matchesHost("api.x.ai");
+	const isDeepSeek = provider === "deepseek" || matchesHost("deepseek.com");
 	const isOpenRouterDeveloperRoleModel =
 		isOpenRouter && (model.id.startsWith("anthropic/") || model.id.startsWith("openai/"));
 	const cacheControlFormat = provider === "openrouter" && model.id.startsWith("anthropic/") ? "anthropic" : undefined;

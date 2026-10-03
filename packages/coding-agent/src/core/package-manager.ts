@@ -1419,6 +1419,15 @@ export class DefaultPackageManager implements PackageManager {
 		if (gitParsed) {
 			return gitParsed;
 		}
+		const normalizedSource = source.trim().toLowerCase();
+		if (
+			normalizedSource.startsWith("git:") ||
+			normalizedSource.startsWith("http://") ||
+			normalizedSource.startsWith("https://") ||
+			normalizedSource.startsWith("ssh://")
+		) {
+			throw new Error(`Invalid git source: ${source}`);
+		}
 
 		return { type: "local", path: source };
 	}
@@ -1681,13 +1690,9 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private parseNpmSpec(spec: string): { name: string; version?: string } {
-		const match = spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@(.+))?$/);
-		if (!match) {
-			return { name: spec };
-		}
-		const name = match[1] ?? spec;
-		const version = match[2];
-		return { name, version };
+		const versionSeparator = spec.startsWith("@") ? spec.indexOf("@", spec.indexOf("/") + 1) : spec.indexOf("@");
+		if (versionSeparator <= 0 || versionSeparator === spec.length - 1) return { name: spec };
+		return { name: spec.slice(0, versionSeparator), version: spec.slice(versionSeparator + 1) };
 	}
 
 	private assertProjectTrustedForScope(scope: SourceScope): void {
@@ -1779,7 +1784,7 @@ export class DefaultPackageManager implements PackageManager {
 		const targetDir = this.getGitInstallPath(source, scope);
 		if (existsSync(targetDir)) {
 			if (source.ref) {
-				await this.ensureGitRef(targetDir, ["fetch", "origin", source.ref], "FETCH_HEAD");
+				await this.ensureGitRef(targetDir, ["fetch", "--", "origin", source.ref], "FETCH_HEAD");
 				return;
 			}
 			const target = await this.getLocalGitUpdateTarget(targetDir);
@@ -1792,9 +1797,9 @@ export class DefaultPackageManager implements PackageManager {
 		}
 		mkdirSync(dirname(targetDir), { recursive: true });
 
-		await this.runCommand("git", ["clone", source.repo, targetDir]);
+		await this.runCommand("git", ["clone", "--", source.repo, targetDir]);
 		if (source.ref) {
-			await this.runCommand("git", ["checkout", source.ref], { cwd: targetDir });
+			await this.runCommand("git", ["checkout", "--detach", source.ref, "--"], { cwd: targetDir });
 		}
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
@@ -1810,7 +1815,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		if (source.ref) {
-			await this.ensureGitRef(targetDir, ["fetch", "origin", source.ref], "FETCH_HEAD");
+			await this.ensureGitRef(targetDir, ["fetch", "--", "origin", source.ref], "FETCH_HEAD");
 			return;
 		}
 

@@ -88,7 +88,15 @@ function hasUnsafeGitInstallPart(value: string, allowSlash: boolean): boolean {
 	}
 	const candidates = [value, decoded];
 	for (const candidate of candidates) {
-		if (candidate.includes("\0") || candidate.includes("\\") || candidate.startsWith("/")) {
+		let hasControlCharacter = false;
+		for (let index = 0; index < candidate.length; index += 1) {
+			const code = candidate.charCodeAt(index);
+			if (code < 32 || code === 127) {
+				hasControlCharacter = true;
+				break;
+			}
+		}
+		if (hasControlCharacter || candidate.includes("\\") || candidate.startsWith("/") || candidate.startsWith("-")) {
 			return true;
 		}
 		if (!allowSlash && candidate.includes("/")) {
@@ -109,7 +117,11 @@ function buildGitSource(args: { repo: string; host: string; path: string; ref?: 
 	if (!args.host || !normalizedPath || normalizedPath.split("/").length < 2) {
 		return null;
 	}
-	if (hasUnsafeGitInstallPart(args.host, false) || hasUnsafeGitInstallPart(normalizedPath, true)) {
+	if (
+		hasUnsafeGitInstallPart(args.host, false) ||
+		hasUnsafeGitInstallPart(normalizedPath, true) ||
+		(args.ref !== undefined && hasUnsafeGitInstallPart(args.ref, true))
+	) {
 		return null;
 	}
 

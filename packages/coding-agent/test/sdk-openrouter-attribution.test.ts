@@ -172,12 +172,14 @@ describe("createAgentSession provider attribution headers", () => {
 		expect(headers?.["X-OpenRouter-Categories"]).toBe("cli-agent");
 	});
 
-	it("preserves legacy OpenRouter base URL substring attribution matching", async () => {
-		const headers = await captureHeaders(createModel("custom-openrouter", "not-a-url-openrouter.ai"));
+	it("does not attribute malformed or lookalike OpenRouter URLs", async () => {
+		const malformedHeaders = await captureHeaders(createModel("custom-openrouter", "not-a-url-openrouter.ai"));
+		const lookalikeHeaders = await captureHeaders(
+			createModel("custom-openrouter", "https://openrouter.ai.evil.example/api/v1"),
+		);
 
-		expect(headers?.["HTTP-Referer"]).toBe("https://github.com/odin-labs-ai/pi-mono");
-		expect(headers?.["X-OpenRouter-Title"]).toBe("Odin Pi");
-		expect(headers?.["X-OpenRouter-Categories"]).toBe("cli-agent");
+		expect(malformedHeaders?.["HTTP-Referer"]).toBeUndefined();
+		expect(lookalikeHeaders?.["HTTP-Referer"]).toBeUndefined();
 	});
 
 	it("lets provider and request headers override the defaults", async () => {

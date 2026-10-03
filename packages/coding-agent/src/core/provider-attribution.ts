@@ -11,14 +11,16 @@ const VERCEL_GATEWAY_HOST = "ai-gateway.vercel.sh";
 
 function matchesHost(baseUrl: string, expectedHost: string): boolean {
 	try {
-		return new URL(baseUrl).hostname === expectedHost;
+		const hostname = new URL(baseUrl).hostname.toLowerCase();
+		const normalizedExpectedHost = expectedHost.toLowerCase();
+		return hostname === normalizedExpectedHost || hostname.endsWith(`.${normalizedExpectedHost}`);
 	} catch {
 		return false;
 	}
 }
 
 function isOpenRouterModel(model: Model<Api>): boolean {
-	return model.provider === "openrouter" || model.baseUrl.includes(OPENROUTER_HOST);
+	return model.provider === "openrouter" || matchesHost(model.baseUrl, OPENROUTER_HOST);
 }
 
 function isNvidiaNimModel(model: Model<Api>): boolean {

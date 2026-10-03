@@ -25,6 +25,11 @@ import {
 // ============================================================================
 
 describe("substituteArgs", () => {
+	test("handles long malformed placeholder input linearly", () => {
+		const input = "${@:".repeat(20_000);
+		expect(substituteArgs(input, ["safe"])).toBe(input);
+	});
+
 	test("should replace $ARGUMENTS with all args joined", () => {
 		expect(substituteArgs("Test: $ARGUMENTS", ["a", "b", "c"])).toBe("Test: a b c");
 	});
